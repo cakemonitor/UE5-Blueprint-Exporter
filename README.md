@@ -1,216 +1,360 @@
 # UE5 Blueprint Exporter for Claude Code
 
-Export Unreal Engine 5 blueprints to JSON and Markdown format for AI-powered analysis with Claude Code.
+> **Export Unreal Engine 5 blueprints to JSON and Markdown for AI-powered analysis**
 
-![UE5](https://img.shields.io/badge/UE5-5.3-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Platform](https://img.shields.io/badge/platform-Mac%20%7C%20Windows-lightgrey)
+Transform your UE5 blueprints into Claude Code-friendly documentation. Ask questions about your project in natural language, understand complex blueprint logic, and generate comprehensive documentation automatically.
 
-## Features
+[![UE5](https://img.shields.io/badge/UE5-5.3-0E1128?logo=unrealengine)](https://www.unrealengine.com/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Mac%20%7C%20Windows-lightgrey)](#system-requirements)
 
-- ✅ **Full Blueprint Graph Extraction** - Extract complete node graphs with connections, pins, and values
-- ✅ **Variables & Functions** - Export all blueprint variables, functions, and parameters
-- ✅ **Components & Dependencies** - Track components and asset dependencies
-- ✅ **JSON + Markdown Output** - Machine-readable JSON and human-friendly Markdown
-- ✅ **Claude Code Integration** - Designed for AI-powered blueprint analysis
-- ✅ **C++ Plugin + Python** - Robust extraction using UE5 Editor API
+---
 
-## Quick Start
+## ✨ Why Use This?
 
-### 1. Installation
+**Problem:** UE5 blueprints are visual and locked inside .uasset files. You can't:
+- Search across all blueprints easily
+- Ask AI questions about your blueprint logic
+- Generate documentation automatically
+- Understand complex blueprint relationships
 
-Copy the plugin and Python scripts to your UE5 project:
+**Solution:** This tool extracts *everything* from your blueprints into readable formats:
 
+```
+Ask Claude Code: "How does BP_PlayerCharacter handle movement?"
+
+Claude reads the exported data and explains:
+  ✓ Input actions (IA_Move, IA_Look)
+  ✓ Movement functions (Add Movement Input)
+  ✓ Direction vectors (Forward/Right)
+  ✓ Complete execution flow
+```
+
+---
+
+## 🚀 Features
+
+| Feature | Description |
+|---------|-------------|
+| **🔍 Full Graph Extraction** | Complete node graphs with connections, pins, and default values |
+| **📊 Variables & Functions** | All blueprint variables, functions, parameters, and return types |
+| **🔧 Components** | Component hierarchy with class information |
+| **🔗 Dependencies** | Track all asset references and dependencies |
+| **📄 Dual Output** | JSON (machine-readable) + Markdown (AI-friendly) |
+| **🤖 Claude Code Ready** | Optimized for natural language queries |
+
+---
+
+## 📦 Quick Start
+
+### 1️⃣ Download & Install
+
+**Clone or download this repository:**
+```bash
+git clone https://github.com/YOUR_USERNAME/UE5-Blueprint-Exporter.git
+```
+
+**Copy to your UE5 project:**
 ```
 YourProject/
-├── Plugins/BlueprintExporter/     ← Copy this folder
-└── Content/Python/                 ← Copy Python scripts
-    ├── blueprint_watcher.py
-    └── generate_markdown_from_json.py
+├── Plugins/
+│   └── BlueprintExporter/          ← Copy entire folder
+└── Content/
+    └── Python/                      ← Copy Python scripts
+        ├── blueprint_watcher.py
+        └── generate_markdown_from_json.py
 ```
 
-### 2. Enable Python Plugin
+### 2️⃣ Enable Python Plugin
 
 1. Open your project in **UE5 Editor**
-2. **Edit → Plugins** → Search "Python Editor Script Plugin"
-3. Enable and restart
+2. Go to **Edit → Plugins**
+3. Search **"Python Editor Script Plugin"**
+4. **Enable** and **Restart** editor
 
-### 3. Compile the C++ Plugin
+### 3️⃣ Compile the C++ Plugin
 
-- Right-click your `.uproject` → **Generate Visual Studio/Xcode files**
-- Reopen the project → Click **Yes** when prompted to compile
+**Automatic (Recommended):**
+1. Right-click your `.uproject` file
+2. Select **"Generate Visual Studio/Xcode project files"**
+3. Re-open the project
+4. Click **"Yes"** when UE5 asks to compile the plugin
 
-### 4. Run the Export
+**Manual (if needed):**
+- See [SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md) for detailed compilation steps
 
-In UE5 **Output Log**:
+### 4️⃣ Export Your Blueprints
+
+Open **Window → Output Log** in UE5, then run:
 
 ```python
-import sys; sys.path.append("/absolute/path/to/YourProject/Content/Python"); import blueprint_watcher; blueprint_watcher.main()
+import sys; sys.path.append("/ABSOLUTE/PATH/TO/YourProject/Content/Python"); import blueprint_watcher; blueprint_watcher.main()
 ```
 
-## Output Example
+**Example:**
+```python
+import sys; sys.path.append("/Users/yourname/Documents/Unreal Projects/MyGame/Content/Python"); import blueprint_watcher; blueprint_watcher.main()
+```
+
+**Output:**
+```
+✅ Export complete! Exported 50 blueprints to ClaudeCodeDocs/Blueprints
+```
+
+---
+
+## 📂 Output Structure
 
 ```
 YourProject/ClaudeCodeDocs/Blueprints/
-├── index.md
+├── index.md                              # Overview with all blueprints
+│
 ├── Characters/
-│   ├── BP_Player.json          # Full blueprint data
-│   └── BP_Player.md            # Human-readable summary
+│   ├── BP_PlayerCharacter.json          # Full blueprint data
+│   ├── BP_PlayerCharacter.md            # Human-readable summary
+│   ├── BP_Enemy.json
+│   └── BP_Enemy.md
+│
 └── Weapons/
     ├── BP_Rifle.json
     └── BP_Rifle.md
 ```
 
-### Sample Markdown Output
+### 📋 Sample Markdown Output
 
 ```markdown
 # BP_PlayerCharacter
 
 **Type:** Blueprint
 **Parent Class:** Character
-**Components:**
+**Generated Class:** BP_PlayerCharacter_C
+
+## Components
 - FirstPersonCamera (CameraComponent)
 - FirstPersonMesh (SkeletalMeshComponent)
 
-**Variables:**
+## Variables
 | Name | Type | Default |
 |------|------|---------|
 | Health | float | 100.0 |
-| MaxHealth | float | 100.0 |
+| bHasRifle | bool | false |
 
-**Graphs:**
+## Graphs
+
 ### EventGraph
 **Total Nodes:** 24
+
+**Event Nodes:**
+- Event BeginPlay
+
 **Function Calls:**
 - Jump
 - Add Movement Input
 - Get Actor Forward Vector
+- Add Controller Pitch Input
+
+## Dependencies
+- /Game/FirstPerson/Input/Actions/IA_Move
+- /Game/FirstPerson/Input/Actions/IA_Jump
 ```
 
-## Usage with Claude Code
+---
 
-Once exported, ask Claude Code about your blueprints:
+## 💬 Usage with Claude Code
+
+Once exported, use **Claude Code** to analyze your blueprints in natural language:
 
 ```bash
-cd /path/to/your/project
+cd /path/to/your/ue5/project
 claude-code
 ```
 
-**Example questions:**
-- "How does BP_PlayerCharacter handle movement?"
-- "What components does BP_Weapon have?"
-- "Show me all blueprints that reference BP_GameMode"
-- "List all variables in BP_InventorySystem"
+### Example Questions:
 
-## What Gets Exported
+**Understanding Logic:**
+> "How does BP_PlayerCharacter handle movement?"
 
-### From C++ Plugin:
-- ✅ Complete graph structure (nodes, pins, connections)
-- ✅ Node positions and types
-- ✅ Variables with types and defaults
-- ✅ Functions with parameters and implementations
-- ✅ Components with class information
-- ✅ All asset dependencies
+**Finding Connections:**
+> "What blueprints depend on BP_GameMode?"
 
-### Output Formats:
-- **JSON** - Complete machine-readable data for programmatic access
-- **Markdown** - Human-readable summaries optimized for Claude Code
+**Exploring Components:**
+> "List all weapons in my project and their components"
 
-## Configuration
+**Variables & State:**
+> "Show me all blueprints with a 'Health' variable"
 
-Edit `Content/Python/blueprint_watcher.py`:
+**Debugging:**
+> "Which blueprints call the 'TakeDamage' function?"
+
+---
+
+## 🔧 What Gets Exported
+
+### Complete Blueprint Data:
+
+| Data Type | Details |
+|-----------|---------|
+| **Graphs** | EventGraph, UserConstructionScript, Custom Functions |
+| **Nodes** | Node type, title, category, position (x, y) |
+| **Pins** | Name, direction, type, default values |
+| **Connections** | Node-to-node execution flow |
+| **Variables** | Name, type, category, default value, exposed status |
+| **Functions** | Name, parameters, return type, graph implementation |
+| **Components** | Name, class, hierarchy |
+| **Dependencies** | All referenced assets, blueprints, and classes |
+
+---
+
+## ⚙️ Configuration
+
+Edit `Content/Python/blueprint_watcher.py` to customize:
 
 ```python
-# Output directory
+# Output directory (relative to project root)
 OUTPUT_DIR = "ClaudeCodeDocs/Blueprints"
 
-# Generate markdown
+# Generate markdown files (recommended for Claude Code)
 GENERATE_MARKDOWN = True
 
-# Include graph nodes (requires C++ plugin)
+# Include detailed graph nodes (requires C++ plugin)
 INCLUDE_GRAPH_NODES = True
 ```
 
-## System Requirements
+---
 
-- **Unreal Engine 5.0+** (tested on 5.3)
-- **Python 3** (included with UE5)
-- **C++ Compiler:**
-  - Mac: Xcode Command Line Tools
-  - Windows: Visual Studio 2019/2022
-- **Claude Code** (optional, for AI analysis)
+## 🛠️ System Requirements
 
-## Documentation
+| Component | Requirement |
+|-----------|-------------|
+| **Unreal Engine** | 5.0 or higher (tested on 5.3) |
+| **Python** | 3.x (included with UE5) |
+| **C++ Compiler** | Xcode (Mac) or Visual Studio 2019/2022 (Windows) |
+| **Claude Code** | Optional, for AI-powered analysis |
 
-- [**SETUP_INSTRUCTIONS.md**](SETUP_INSTRUCTIONS.md) - Detailed installation guide
-- [**BLUEPRINT_EXPORTER_README.md**](BLUEPRINT_EXPORTER_README.md) - Architecture & design
+---
 
-## Architecture
+## 📖 Documentation
+
+- **[SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md)** - Detailed installation guide with troubleshooting
+- **[BLUEPRINT_EXPORTER_README.md](BLUEPRINT_EXPORTER_README.md)** - Architecture, design decisions, and MVP details
+
+---
+
+## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────┐
-│   UE5 Editor (Python Plugin)        │
-│   - blueprint_watcher.py            │
-│   - Orchestrates export             │
-└──────────────┬──────────────────────┘
-               │ calls
+┌─────────────────────────────────────────┐
+│   UE5 Editor (Python Plugin)            │
+│   blueprint_watcher.py                  │
+│   • Orchestrates export                 │
+│   • Generates markdown                  │
+└──────────────┬──────────────────────────┘
+               │ calls C++ API
                ▼
-┌─────────────────────────────────────┐
-│   C++ Plugin (BlueprintExporter)    │
-│   - Extracts graph nodes            │
-│   - Serializes to JSON              │
-└──────────────┬──────────────────────┘
-               │ outputs
+┌─────────────────────────────────────────┐
+│   C++ Plugin (BlueprintExporter)        │
+│   BlueprintExporter.cpp                 │
+│   • Extracts graph nodes                │
+│   • Serializes to JSON                  │
+│   • Accesses internal blueprint data    │
+└──────────────┬──────────────────────────┘
+               │ writes files
                ▼
-┌─────────────────────────────────────┐
-│   ClaudeCodeDocs/Blueprints/        │
-│   - .json (full data)               │
-│   - .md (human-readable)            │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│   Output: ClaudeCodeDocs/Blueprints/    │
+│   • .json (full graph data)             │
+│   • .md (human-readable)                │
+│   • index.md (project overview)         │
+└─────────────────────────────────────────┘
 ```
 
-## Troubleshooting
+---
+
+## 🐛 Troubleshooting
 
 ### "BlueprintExporter plugin not found"
-- Ensure the plugin compiled successfully
-- Check **Edit → Plugins** for "Blueprint Exporter"
-- Restart the editor
+✅ **Solution:**
+- Verify plugin compiled (check **Edit → Plugins**)
+- Look for "Blueprint Exporter" (should be enabled)
+- Try regenerating project files and rebuilding
 
 ### "Could not load Python file"
-- Use **absolute path** in Python command
+✅ **Solution:**
+- Use **absolute path** in the Python command
 - Verify `blueprint_watcher.py` exists in `Content/Python/`
+- Check for typos in the path
 
-### No Markdown Files
+### No Markdown Files Generated
+✅ **Solution:**
 Run the markdown generator separately:
 ```python
 import sys; sys.path.append("/path/to/Content/Python"); import generate_markdown_from_json; generate_markdown_from_json.process_json_files()
 ```
 
-## Contributing
+### Compilation Errors on Mac
+✅ **Solution:**
+- Install Xcode Command Line Tools: `xcode-select --install`
+- Verify UE5 version matches (built for 5.3)
 
-Contributions welcome! This tool is designed to make UE5 blueprints accessible to AI analysis.
+---
 
-### Areas for Enhancement:
-- [ ] Auto-refresh on blueprint changes
-- [ ] MCP server integration
-- [ ] Blueprint comparison/diff
-- [ ] Visual graph generation
-- [ ] Blueprint search interface
+## 🤝 Contributing
 
-## License
+Contributions are welcome! This is an open-source tool for the UE5 and AI community.
 
-MIT License - Feel free to use in your projects!
+### Ideas for Enhancement:
+- [ ] **Auto-refresh** - Watch for blueprint changes and auto-export
+- [ ] **MCP Server** - Model Context Protocol integration
+- [ ] **Blueprint Diff** - Compare blueprint versions
+- [ ] **Visual Graphs** - Generate node graph images
+- [ ] **Search Interface** - Web UI for blueprint search
+- [ ] **Blueprint Stats** - Complexity metrics and analysis
 
-## Credits
+**To contribute:**
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-Built for use with [Claude Code](https://claude.com/claude-code) by Anthropic.
+---
 
-Uses:
+## 📜 License
+
+MIT License - See [LICENSE](LICENSE) file for details.
+
+Feel free to use in personal and commercial projects!
+
+---
+
+## 🙏 Credits
+
+**Built for:** [Claude Code](https://claude.com/claude-code) by Anthropic
+
+**Technologies:**
 - UE5 C++ Editor Plugin API
 - UE5 Python Scripting Plugin
 - Blueprint Graph Node Extraction
 - JSON Serialization
 
+**Special Thanks:**
+- Unreal Engine community
+- Claude Code users
+- Contributors and testers
+
+---
+
+## 🌟 Star This Repository!
+
+If this tool helps you, please **⭐ star the repository** to help others discover it!
+
+### Share Your Results:
+- Tweet [@UnrealEngine](https://twitter.com/UnrealEngine) with your use case
+- Share in [Unreal Slackers Discord](https://unrealslackers.org/)
+- Post in [r/unrealengine](https://reddit.com/r/unrealengine)
+
 ---
 
 **Made with ❤️ for the UE5 and AI community**
+
+[Report Bug](https://github.com/YOUR_USERNAME/UE5-Blueprint-Exporter/issues) · [Request Feature](https://github.com/YOUR_USERNAME/UE5-Blueprint-Exporter/issues) · [Discussions](https://github.com/YOUR_USERNAME/UE5-Blueprint-Exporter/discussions)
