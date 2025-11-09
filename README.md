@@ -85,20 +85,41 @@ YourProject/
 
 ### 4️⃣ Export Your Blueprints
 
-Open **Window → Output Log** in UE5, then run:
+**In UE5 Editor:**
+1. Open **Window → Output Log**
+2. At the bottom, find the command input field (looks like: `Cmd: ▊`)
+3. **Copy and paste this command** (replace with YOUR project path):
 
 ```python
-import sys; sys.path.append("/ABSOLUTE/PATH/TO/YourProject/Content/Python"); import blueprint_watcher; blueprint_watcher.main()
+import sys; sys.path.append("/Users/yourname/Documents/Unreal Projects/YourProject/Content/Python"); import blueprint_watcher; blueprint_watcher.main()
 ```
 
-**Example:**
+**Real Example:**
 ```python
-import sys; sys.path.append("/Users/yourname/Documents/Unreal Projects/MyGame/Content/Python"); import blueprint_watcher; blueprint_watcher.main()
+import sys; sys.path.append("/Users/fromastermarv/Documents/Unreal Projects/exporter_fps_mvp/Content/Python"); import blueprint_watcher; blueprint_watcher.main()
 ```
 
-**Output:**
+4. Press **Enter**
+
+**You'll see:**
 ```
-✅ Export complete! Exported 50 blueprints to ClaudeCodeDocs/Blueprints
+============================================================
+UE5 Blueprint Exporter for Claude Code
+============================================================
+Export complete! Exported 50 blueprints
+
+HOW TO USE WITH CLAUDE CODE:
+------------------------------------------------------------
+Copy this prompt:
+
+I have exported UE5 blueprints to /Your/Project/ClaudeCodeDocs/Blueprints/
+Please read the index.md file to see all available blueprints,
+then answer my questions about the blueprint logic.
+------------------------------------------------------------
+
+Example questions:
+- How does BP_FirstPersonCharacter handle movement?
+- Walk me through the weapon firing sequence
 ```
 
 ---

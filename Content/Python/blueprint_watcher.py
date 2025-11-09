@@ -369,7 +369,25 @@ def main():
 
     unreal.log("\nExport complete! You can now use Claude Code to analyze your blueprints.")
     unreal.log(f"Documentation location: {os.path.join(get_project_root(), OUTPUT_DIR)}")
-    unreal.log("\nTo re-export, run this script again or implement the watcher (see below).")
+    unreal.log("\n" + "=" * 60)
+    unreal.log("HOW TO USE WITH CLAUDE CODE:")
+    unreal.log("=" * 60)
+    unreal.log("\n1. Open Claude Code in your project directory:")
+    unreal.log(f"   cd {get_project_root()}")
+    unreal.log("   claude-code")
+    unreal.log("\n2. Copy this prompt to tell Claude Code where your blueprints are:")
+    unreal.log("\n" + "-" * 60)
+    unreal.log(f"I have exported UE5 blueprints to {os.path.join(get_project_root(), OUTPUT_DIR)}/")
+    unreal.log("Please read the index.md file to see all available blueprints,")
+    unreal.log("then answer my questions about the blueprint logic.")
+    unreal.log("-" * 60)
+    unreal.log("\n3. Example questions to ask:")
+    unreal.log("   - How does BP_FirstPersonCharacter handle movement?")
+    unreal.log("   - What components does BP_Weapon_Component have?")
+    unreal.log("   - Walk me through the weapon firing sequence")
+    unreal.log("   - Which blueprints use the IA_Jump input action?")
+    unreal.log("\n" + "=" * 60)
+    unreal.log("\nTo re-export, run this script again.")
 
 
 # ============================================================================
