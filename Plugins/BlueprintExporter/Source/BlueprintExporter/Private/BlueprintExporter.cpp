@@ -1,6 +1,7 @@
 // BlueprintExporter.cpp
 
 #include "BlueprintExporter.h"
+#include "Modules/ModuleManager.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "K2Node.h"
@@ -453,6 +454,12 @@ TArray<UEdGraphNode*> UBlueprintExporterLibrary::GetConnectedNodes(UEdGraphNode*
 
 void UBlueprintChangeMonitor::StartMonitoring(FOnBlueprintChanged OnChanged)
 {
+	if (bIsMonitoring)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Blueprint change monitoring already started"));
+		return;
+	}
+
 	OnBlueprintChangedDelegate = OnChanged;
 
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
@@ -462,19 +469,46 @@ void UBlueprintChangeMonitor::StartMonitoring(FOnBlueprintChanged OnChanged)
 	AssetRegistry.OnAssetRemoved().AddUObject(this, &UBlueprintChangeMonitor::OnAssetRemoved);
 	AssetRegistry.OnAssetUpdated().AddUObject(this, &UBlueprintChangeMonitor::OnAssetModified);
 
+	bIsMonitoring = true;
+
 	UE_LOG(LogTemp, Log, TEXT("Blueprint change monitoring started"));
 }
 
 void UBlueprintChangeMonitor::StopMonitoring()
 {
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	// Early return if not monitoring
+	if (!bIsMonitoring)
+	{
+		return;
+	}
+
+	// Check if AssetRegistry module is still loaded before trying to access it
+	// During shutdown, modules may be destroyed in any order
+	if (!FModuleManager::Get().IsModuleLoaded("AssetRegistry"))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Blueprint change monitoring cleanup skipped - AssetRegistry module already unloaded"));
+		bIsMonitoring = false;
+		return;
+	}
+
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::GetModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
 	AssetRegistry.OnAssetAdded().RemoveAll(this);
 	AssetRegistry.OnAssetRemoved().RemoveAll(this);
 	AssetRegistry.OnAssetUpdated().RemoveAll(this);
 
+	bIsMonitoring = false;
+
 	UE_LOG(LogTemp, Log, TEXT("Blueprint change monitoring stopped"));
+}
+
+void UBlueprintChangeMonitor::BeginDestroy()
+{
+	// Ensure monitoring is stopped before destruction
+	StopMonitoring();
+
+	Super::BeginDestroy();
 }
 
 void UBlueprintChangeMonitor::OnAssetAdded(const FAssetData& AssetData)
@@ -503,3 +537,23 @@ void UBlueprintChangeMonitor::OnAssetModified(const FAssetData& AssetData)
 		}
 	}
 }
+
+// ============================================================================
+// Module Implementation
+// ============================================================================
+
+class FBlueprintExporterModule : public IModuleInterface
+{
+public:
+	virtual void StartupModule() override
+	{
+		UE_LOG(LogTemp, Log, TEXT("BlueprintExporter module started"));
+	}
+
+	virtual void ShutdownModule() override
+	{
+		UE_LOG(LogTemp, Log, TEXT("BlueprintExporter module shutdown"));
+	}
+};
+
+IMPLEMENT_MODULE(FBlueprintExporterModule, BlueprintExporter)

@@ -97,6 +97,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Blueprint Exporter")
 	void StopMonitoring();
 
+	// Override BeginDestroy to ensure proper cleanup during shutdown
+	virtual void BeginDestroy() override;
+
 private:
 	void OnAssetAdded(const FAssetData& AssetData);
 	void OnAssetRemoved(const FAssetData& AssetData);
@@ -104,4 +107,5 @@ private:
 
 	FOnBlueprintChanged OnBlueprintChangedDelegate;
 	TMap<FString, FDateTime> BlueprintModificationTimes;
+	bool bIsMonitoring = false;
 };
