@@ -34,8 +34,14 @@ public class BlueprintExporter : ModuleRules
 				"InputCore",
 				"PropertyEditor",
 				"LevelEditor",
-				"Projects"
+				"Projects",
+				"ToolMenus"
 			}
 		);
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("PythonScriptPlugin");
+		}
 	}
 }

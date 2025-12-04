@@ -17,6 +17,19 @@
 #include "HAL/PlatformFileManager.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "Engine/SCS_Node.h"
+#include "LevelEditor.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "ToolMenus.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/Paths.h"
+
+// Python plugin headers (only if available)
+#if defined(WITH_PYTHON) && WITH_PYTHON
+#include "IPythonScriptPlugin.h"
+#endif
+
+// Define custom log category
+DEFINE_LOG_CATEGORY(LogBlueprintExporter);
 
 // ============================================================================
 // Main Export Functions
@@ -26,7 +39,7 @@ FString UBlueprintExporterLibrary::ExtractBlueprintData(UBlueprint* Blueprint)
 {
 	if (!Blueprint)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ExtractBlueprintData: Invalid blueprint"));
+		UE_LOG(LogBlueprintExporter, Error, TEXT("ExtractBlueprintData: Invalid blueprint"));
 		return TEXT("{}");
 	}
 
@@ -65,8 +78,30 @@ bool UBlueprintExporterLibrary::ExportBlueprintToFile(UBlueprint* Blueprint, con
 {
 	if (!Blueprint)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ExportBlueprintToFile: Invalid blueprint"));
+		UE_LOG(LogBlueprintExporter, Error, TEXT("ExportBlueprintToFile: Invalid blueprint"));
 		return false;
+	}
+
+	// Validate file path
+	if (FilePath.IsEmpty())
+	{
+		UE_LOG(LogBlueprintExporter, Error, TEXT("ExportBlueprintToFile: Empty file path provided"));
+		return false;
+	}
+
+	// Ensure the directory exists
+	FString Directory = FPaths::GetPath(FilePath);
+	if (!Directory.IsEmpty())
+	{
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		if (!PlatformFile.DirectoryExists(*Directory))
+		{
+			if (!PlatformFile.CreateDirectoryTree(*Directory))
+			{
+				UE_LOG(LogBlueprintExporter, Error, TEXT("ExportBlueprintToFile: Failed to create directory: %s"), *Directory);
+				return false;
+			}
+		}
 	}
 
 	FString JsonString = ExtractBlueprintData(Blueprint);
@@ -74,21 +109,44 @@ bool UBlueprintExporterLibrary::ExportBlueprintToFile(UBlueprint* Blueprint, con
 	// Save to file
 	if (FFileHelper::SaveStringToFile(JsonString, *FilePath))
 	{
-		UE_LOG(LogTemp, Log, TEXT("Exported blueprint to: %s"), *FilePath);
+		UE_LOG(LogBlueprintExporter, Log, TEXT("Exported blueprint to: %s"), *FilePath);
 		return true;
 	}
 
-	UE_LOG(LogTemp, Error, TEXT("Failed to save file: %s"), *FilePath);
+	UE_LOG(LogBlueprintExporter, Error, TEXT("Failed to save file: %s"), *FilePath);
 	return false;
 }
 
 int32 UBlueprintExporterLibrary::ExportAllBlueprints(const FString& OutputDirectory)
 {
+	if (OutputDirectory.IsEmpty())
+	{
+		UE_LOG(LogBlueprintExporter, Error, TEXT("ExportAllBlueprints: Empty output directory provided"));
+		return 0;
+	}
+
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	if (!PlatformFile.DirectoryExists(*OutputDirectory))
+	{
+		if (!PlatformFile.CreateDirectoryTree(*OutputDirectory))
+		{
+			UE_LOG(LogBlueprintExporter, Error, TEXT("ExportAllBlueprints: Failed to create output directory: %s"), *OutputDirectory);
+			return 0;
+		}
+	}
+
 	TArray<UBlueprint*> Blueprints = GetAllProjectBlueprints();
 	int32 ExportedCount = 0;
+	int32 FailedCount = 0;
 
 	for (UBlueprint* Blueprint : Blueprints)
 	{
+		if (!Blueprint)
+		{
+			FailedCount++;
+			continue;
+		}
+
 		FString FileName = Blueprint->GetName() + TEXT(".json");
 		FString FilePath = FPaths::Combine(OutputDirectory, FileName);
 
@@ -96,9 +154,13 @@ int32 UBlueprintExporterLibrary::ExportAllBlueprints(const FString& OutputDirect
 		{
 			ExportedCount++;
 		}
+		else
+		{
+			FailedCount++;
+		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Exported %d blueprints to %s"), ExportedCount, *OutputDirectory);
+	UE_LOG(LogBlueprintExporter, Log, TEXT("Exported %d blueprints to %s (%d failed)"), ExportedCount, *OutputDirectory, FailedCount);
 	return ExportedCount;
 }
 
@@ -338,10 +400,10 @@ TArray<TSharedPtr<FJsonValue>> UBlueprintExporterLibrary::ExtractDependencies(UB
 	TArray<TSharedPtr<FJsonValue>> DependenciesArray;
 	TSet<FString> UniqueDependencies;
 
-	// Search through all graphs for referenced assets
-	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	// Helper lambda to process a single graph
+	auto ProcessGraph = [&UniqueDependencies, &DependenciesArray](UEdGraph* Graph)
 	{
-		if (!Graph) continue;
+		if (!Graph) return;
 
 		for (UEdGraphNode* Node : Graph->Nodes)
 		{
@@ -378,6 +440,31 @@ TArray<TSharedPtr<FJsonValue>> UBlueprintExporterLibrary::ExtractDependencies(UB
 				}
 			}
 		}
+	};
+
+	// Search through all graph types
+	// 1. Event graphs (UbergraphPages)
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		ProcessGraph(Graph);
+	}
+
+	// 2. Function graphs
+	for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+	{
+		ProcessGraph(Graph);
+	}
+
+	// 3. Macro graphs
+	for (UEdGraph* Graph : Blueprint->MacroGraphs)
+	{
+		ProcessGraph(Graph);
+	}
+
+	// 4. Delegate signature graphs
+	for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs)
+	{
+		ProcessGraph(Graph);
 	}
 
 	return DependenciesArray;
@@ -433,14 +520,14 @@ TArray<UEdGraphNode*> UBlueprintExporterLibrary::GetConnectedNodes(UEdGraphNode*
 
 	for (UEdGraphPin* Pin : Node->Pins)
 	{
-		if (Pin && Pin->Direction == EGPD_Output)
+		if (!Pin) continue;
+
+		// Check both input and output pins for bidirectional connection tracking
+		for (UEdGraphPin* LinkedPin : Pin->LinkedTo)
 		{
-			for (UEdGraphPin* LinkedPin : Pin->LinkedTo)
+			if (LinkedPin && LinkedPin->GetOwningNode())
 			{
-				if (LinkedPin && LinkedPin->GetOwningNode())
-				{
-					ConnectedNodes.AddUnique(LinkedPin->GetOwningNode());
-				}
+				ConnectedNodes.AddUnique(LinkedPin->GetOwningNode());
 			}
 		}
 	}
@@ -456,7 +543,7 @@ void UBlueprintChangeMonitor::StartMonitoring(FOnBlueprintChanged OnChanged)
 {
 	if (bIsMonitoring)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Blueprint change monitoring already started"));
+		UE_LOG(LogBlueprintExporter, Warning, TEXT("Blueprint change monitoring already started"));
 		return;
 	}
 
@@ -471,7 +558,7 @@ void UBlueprintChangeMonitor::StartMonitoring(FOnBlueprintChanged OnChanged)
 
 	bIsMonitoring = true;
 
-	UE_LOG(LogTemp, Log, TEXT("Blueprint change monitoring started"));
+	UE_LOG(LogBlueprintExporter, Log, TEXT("Blueprint change monitoring started"));
 }
 
 void UBlueprintChangeMonitor::StopMonitoring()
@@ -486,7 +573,7 @@ void UBlueprintChangeMonitor::StopMonitoring()
 	// During shutdown, modules may be destroyed in any order
 	if (!FModuleManager::Get().IsModuleLoaded("AssetRegistry"))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Blueprint change monitoring cleanup skipped - AssetRegistry module already unloaded"));
+		UE_LOG(LogBlueprintExporter, Warning, TEXT("Blueprint change monitoring cleanup skipped - AssetRegistry module already unloaded"));
 		bIsMonitoring = false;
 		return;
 	}
@@ -500,7 +587,7 @@ void UBlueprintChangeMonitor::StopMonitoring()
 
 	bIsMonitoring = false;
 
-	UE_LOG(LogTemp, Log, TEXT("Blueprint change monitoring stopped"));
+	UE_LOG(LogBlueprintExporter, Log, TEXT("Blueprint change monitoring stopped"));
 }
 
 void UBlueprintChangeMonitor::BeginDestroy()
@@ -547,12 +634,119 @@ class FBlueprintExporterModule : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
-		UE_LOG(LogTemp, Log, TEXT("BlueprintExporter module started"));
+		UE_LOG(LogBlueprintExporter, Log, TEXT("BlueprintExporter module started"));
+
+		// Register menu extension
+		if (!IsRunningCommandlet())
+		{
+			FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
+
+			// Add menu entry to Tools menu
+			UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FBlueprintExporterModule::RegisterMenus));
+
+			// Register Python convenience function
+			RegisterPythonCommand();
+		}
 	}
 
 	virtual void ShutdownModule() override
 	{
-		UE_LOG(LogTemp, Log, TEXT("BlueprintExporter module shutdown"));
+		UToolMenus::UnRegisterStartupCallback(this);
+		UToolMenus::UnregisterOwner(this);
+
+		UE_LOG(LogBlueprintExporter, Log, TEXT("BlueprintExporter module shutdown"));
+	}
+
+private:
+	void RegisterMenus()
+	{
+		FToolMenuOwnerScoped OwnerScoped(this);
+
+		UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Tools");
+		FToolMenuSection& Section = Menu->AddSection("BlueprintExporter", FText::FromString("Blueprint Exporter"));
+
+		Section.AddMenuEntry(
+			"ExportBlueprints",
+			FText::FromString("Export Blueprints"),
+			FText::FromString("Export all blueprints to JSON and Markdown"),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateStatic(&FBlueprintExporterModule::ExecuteExport))
+		);
+	}
+
+	void RegisterPythonCommand()
+	{
+#if defined(WITH_PYTHON) && WITH_PYTHON
+		// Register plugin's Python path and create convenience function
+		// Check at runtime if Python plugin is available
+		if (!FModuleManager::Get().IsModuleLoaded("PythonScriptPlugin"))
+		{
+			UE_LOG(LogBlueprintExporter, Log, TEXT("Python plugin not loaded - skipping Python command registration"));
+			return;
+		}
+
+		// Get plugin's Python directory
+		TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintExporter"));
+		if (!Plugin.IsValid())
+		{
+			UE_LOG(LogBlueprintExporter, Warning, TEXT("Could not find BlueprintExporter plugin for Python path registration"));
+			return;
+		}
+
+		FString PluginPythonDir = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Content"), TEXT("Python"));
+
+		// Convert to platform path and escape backslashes for Windows
+		PluginPythonDir = FPaths::ConvertRelativePathToFull(PluginPythonDir);
+		PluginPythonDir.ReplaceInline(TEXT("\\"), TEXT("\\\\"));
+
+		// Build Python script to:
+		// 1. Add plugin Python directory to sys.path
+		// 2. Import blueprint_watcher module
+		// 3. Define export_blueprints() convenience function
+		FString PythonScript = FString::Printf(TEXT(
+			"import sys\n"
+			"import unreal\n"
+			"\n"
+			"# Add plugin Python directory to path\n"
+			"plugin_python_dir = r'%s'\n"
+			"if plugin_python_dir not in sys.path:\n"
+			"    sys.path.insert(0, plugin_python_dir)\n"
+			"    unreal.log(f'Added to Python path: {plugin_python_dir}')\n"
+			"\n"
+			"# Import blueprint_watcher module\n"
+			"import blueprint_watcher\n"
+			"\n"
+			"# Create convenience function\n"
+			"def export_blueprints():\n"
+			"    '''Export all blueprints to JSON and Markdown'''\n"
+			"    blueprint_watcher.main()\n"
+			"\n"
+			"unreal.log('Python command registered: export_blueprints()')\n"
+		), *PluginPythonDir);
+
+		// Execute the Python code
+		FPythonCommandEx PythonCommand;
+		PythonCommand.ExecutionMode = EPythonCommandExecutionMode::ExecuteStatement;
+		PythonCommand.Command = PythonScript;
+
+		FPythonScriptPlugin::Get()->ExecPythonCommandEx(PythonCommand);
+#else
+		UE_LOG(LogBlueprintExporter, Log, TEXT("Python support not compiled in - skipping Python command registration"));
+#endif
+	}
+
+	static void ExecuteExport()
+	{
+		UE_LOG(LogBlueprintExporter, Log, TEXT("Starting blueprint export from menu..."));
+
+		// Get project directory and build output path
+		FString ProjectDir = FPaths::ProjectDir();
+		FString OutputDir = FPaths::Combine(ProjectDir, TEXT("Exported"), TEXT("Blueprints"));
+
+		// Call the export function
+		int32 ExportedCount = UBlueprintExporterLibrary::ExportAllBlueprints(OutputDir);
+
+		UE_LOG(LogBlueprintExporter, Log, TEXT("Export complete! Exported %d blueprints to: %s"), ExportedCount, *OutputDir);
 	}
 };
 

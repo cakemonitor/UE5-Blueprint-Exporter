@@ -1,17 +1,17 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "1.0",
+	"Version": 2,
+	"VersionName": "1.1.0",
 	"FriendlyName": "Blueprint Exporter",
-	"Description": "Exports blueprint data to JSON format for Claude Code integration",
+	"Description": "Export UE5 blueprints to JSON and Markdown. Works with AI assistants, version control, documentation sites, and external tools.",
 	"Category": "Editor",
-	"CreatedBy": "Your Name",
+	"CreatedBy": "",
 	"CreatedByURL": "",
 	"DocsURL": "",
 	"MarketplaceURL": "",
 	"SupportURL": "",
 	"CanContainContent": false,
-	"IsBetaVersion": true,
+	"IsBetaVersion": false,
 	"IsExperimentalVersion": false,
 	"Installed": false,
 	"Modules": [
@@ -19,6 +19,12 @@
 			"Name": "BlueprintExporter",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
 		}
 	]
 }

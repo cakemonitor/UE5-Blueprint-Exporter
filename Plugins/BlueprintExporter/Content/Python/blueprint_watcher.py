@@ -1,6 +1,6 @@
 """
 UE5 Blueprint Watcher and Exporter
-Monitors blueprints for changes and exports them to Claude Code-friendly format
+Monitors blueprints for changes and exports them to JSON and Markdown
 
 Usage:
 1. Place this file in your UE5 project's Content/Python directory
@@ -22,7 +22,7 @@ from typing import Dict, List, Any, Optional
 # ============================================================================
 
 # Output directory (relative to project root)
-OUTPUT_DIR = "ClaudeCodeDocs/Blueprints"
+OUTPUT_DIR = "Exported/Blueprints"
 
 # Refresh interval for file watcher (seconds)
 REFRESH_INTERVAL = 5.0
@@ -53,7 +53,7 @@ def ensure_output_dir():
 def get_output_path(blueprint_path: str, extension: str) -> str:
     """
     Convert blueprint path to output file path
-    /Game/Characters/BP_Player -> ClaudeCodeDocs/Blueprints/Characters/BP_Player.json
+    /Game/Characters/BP_Player -> Exported/Blueprints/Characters/BP_Player.json
     """
     output_root = ensure_output_dir()
 
@@ -548,13 +548,13 @@ def generate_index():
 def main():
     """Main entry point"""
     unreal.log("=" * 60)
-    unreal.log("UE5 Blueprint Exporter for Claude Code")
+    unreal.log("UE5 Blueprint Exporter")
     unreal.log("=" * 60)
 
     # Export all blueprints
     count = export_all_blueprints()
 
-    # Get full path for Claude Code
+    # Get full path
     project_root = get_project_root()
     full_docs_path = os.path.join(project_root, OUTPUT_DIR)
 
@@ -562,18 +562,8 @@ def main():
     unreal.log(f"✓ Exported {count} blueprints")
     unreal.log(f"✓ Location: {OUTPUT_DIR}/")
     unreal.log("=" * 60)
-    unreal.log("\n📍 FOR CLAUDE CODE:")
-    unreal.log(f"\n   The blueprint documentation is located at:")
+    unreal.log(f"\n📍 Export location:")
     unreal.log(f"   {full_docs_path}")
-    unreal.log("\n   Copy this message to Claude Code:")
-    unreal.log(f"   \"My UE5 blueprint docs are in: {full_docs_path}\"")
-    unreal.log("\n" + "=" * 60)
-    unreal.log("\nNEXT: Ask Claude Code about your blueprints:")
-    unreal.log("\nExample questions:")
-    unreal.log("  • How does movement input work in the character blueprint?")
-    unreal.log("  • Show me the node-by-node logic for jumping")
-    unreal.log("  • What components are in my blueprints?")
-    unreal.log("  • Explain the execution flow for [specific event]")
     unreal.log("\n" + "=" * 60)
 
 

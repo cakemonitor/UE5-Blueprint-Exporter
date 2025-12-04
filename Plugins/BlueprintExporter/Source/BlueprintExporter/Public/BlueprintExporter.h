@@ -12,6 +12,9 @@
 #include "EdGraph/EdGraphPin.h"
 #include "BlueprintExporter.generated.h"
 
+// Custom log category for Blueprint Exporter
+DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintExporter, Log, All);
+
 /**
  * Blueprint Exporter Library
  * Provides functions to extract blueprint data for Claude Code integration
@@ -106,6 +109,5 @@ private:
 	void OnAssetModified(const FAssetData& AssetData);
 
 	FOnBlueprintChanged OnBlueprintChangedDelegate;
-	TMap<FString, FDateTime> BlueprintModificationTimes;
 	bool bIsMonitoring = false;
 };
