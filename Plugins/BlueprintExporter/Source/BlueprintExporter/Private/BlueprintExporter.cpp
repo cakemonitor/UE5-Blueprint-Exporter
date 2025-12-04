@@ -804,96 +804,6 @@ TArray<UEdGraphNode*> UBlueprintExporterLibrary::GetConnectedNodes(UEdGraphNode*
 }
 
 // ============================================================================
-// Blueprint Change Monitor Implementation
-// ============================================================================
-
-void UBlueprintChangeMonitor::StartMonitoring(FOnBlueprintChanged OnChanged)
-{
-	if (bIsMonitoring)
-	{
-		UE_LOG(LogBlueprintExporter, Warning, TEXT("Blueprint change monitoring already started"));
-		return;
-	}
-
-	OnBlueprintChangedDelegate = OnChanged;
-
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-
-	AssetRegistry.OnAssetAdded().AddUObject(this, &UBlueprintChangeMonitor::OnAssetAdded);
-	AssetRegistry.OnAssetRemoved().AddUObject(this, &UBlueprintChangeMonitor::OnAssetRemoved);
-	AssetRegistry.OnAssetUpdated().AddUObject(this, &UBlueprintChangeMonitor::OnAssetModified);
-
-	bIsMonitoring = true;
-
-	UE_LOG(LogBlueprintExporter, Log, TEXT("Blueprint change monitoring started"));
-}
-
-void UBlueprintChangeMonitor::StopMonitoring()
-{
-	// Early return if not monitoring
-	if (!bIsMonitoring)
-	{
-		return;
-	}
-
-	// Check if AssetRegistry module is still loaded before trying to access it
-	// During shutdown, modules may be destroyed in any order
-	if (!FModuleManager::Get().IsModuleLoaded("AssetRegistry"))
-	{
-		UE_LOG(LogBlueprintExporter, Warning, TEXT("Blueprint change monitoring cleanup skipped - AssetRegistry module already unloaded"));
-		bIsMonitoring = false;
-		return;
-	}
-
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::GetModuleChecked<FAssetRegistryModule>("AssetRegistry");
-	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-
-	AssetRegistry.OnAssetAdded().RemoveAll(this);
-	AssetRegistry.OnAssetRemoved().RemoveAll(this);
-	AssetRegistry.OnAssetUpdated().RemoveAll(this);
-
-	bIsMonitoring = false;
-
-	UE_LOG(LogBlueprintExporter, Log, TEXT("Blueprint change monitoring stopped"));
-}
-
-void UBlueprintChangeMonitor::BeginDestroy()
-{
-	// Ensure monitoring is stopped before destruction
-	StopMonitoring();
-
-	Super::BeginDestroy();
-}
-
-void UBlueprintChangeMonitor::OnAssetAdded(const FAssetData& AssetData)
-{
-	if (AssetData.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName())
-	{
-		if (UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset()))
-		{
-			OnBlueprintChangedDelegate.ExecuteIfBound(Blueprint);
-		}
-	}
-}
-
-void UBlueprintChangeMonitor::OnAssetRemoved(const FAssetData& AssetData)
-{
-	// Handle blueprint removal if needed
-}
-
-void UBlueprintChangeMonitor::OnAssetModified(const FAssetData& AssetData)
-{
-	if (AssetData.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName())
-	{
-		if (UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset()))
-		{
-			OnBlueprintChangedDelegate.ExecuteIfBound(Blueprint);
-		}
-	}
-}
-
-// ============================================================================
 // Python Integration Helper
 // ============================================================================
 
@@ -929,11 +839,11 @@ public:
 			"    sys.path.insert(0, plugin_python_dir)\n"
 			"    unreal.log(f'Added to Python path: {plugin_python_dir}')\n"
 			"\n"
-			"import blueprint_watcher\n"
+			"import blueprint_exporter\n"
 			"\n"
 			"def export_blueprints():\n"
 			"    '''Export all blueprints to JSON and Markdown'''\n"
-			"    blueprint_watcher.main()\n"
+			"    blueprint_exporter.main()\n"
 			"\n"
 			"unreal.log('Python command registered: export_blueprints()')\n"
 		), *PluginPythonDir);
@@ -998,6 +908,7 @@ private:
 			FUIAction(FExecuteAction::CreateStatic(&FBlueprintExporterModule::ExecuteExport))
 		);
 	}
+
 	static void ExecuteExport()
 	{
 		UE_LOG(LogBlueprintExporter, Log, TEXT("Starting blueprint export from menu..."));

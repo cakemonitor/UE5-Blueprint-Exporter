@@ -1,13 +1,13 @@
 """
-UE5 Blueprint Watcher and Exporter
-Monitors blueprints for changes and exports them to JSON and Markdown
+UE5 Blueprint Exporter
+Exports blueprints to JSON and Markdown
 
 Usage:
-1. Place this file in your UE5 project's Content/Python directory
-2. In UE5 Editor: Window > Developer Tools > Output Log
-3. Run: py "Content/Python/blueprint_watcher.py"
+1. Install BlueprintExporter plugin
+2. In UE5 Editor: Tools > Export Blueprints
+   Or use Python console: export_blueprints()
 
-Or set to auto-run in Project Settings > Python > Startup Scripts
+Output: YourProject/Exported/Blueprints/
 """
 
 import unreal
@@ -576,22 +576,6 @@ def main():
     unreal.log(f"\n📍 Export location:")
     unreal.log(f"   {full_docs_path}")
     unreal.log("\n" + "=" * 60)
-
-
-# ============================================================================
-# FILE WATCHER (Optional - for auto-refresh)
-# ============================================================================
-
-def start_watcher():
-    """
-    Start watching for blueprint changes
-    Note: This requires running in a separate thread or using UE5's tick system
-    """
-    unreal.log_warning("Auto-refresh watcher not yet implemented")
-    unreal.log_warning("For now, manually re-run this script to refresh exports")
-
-    # TODO: Implement using unreal.register_slate_post_tick_callback
-    # or by creating an Editor Utility Widget with a timer
 
 
 # Run main function when script is executed
