@@ -16,6 +16,24 @@
 DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintExporter, Log, All);
 
 /**
+ * Configuration for blueprint export operations
+ */
+USTRUCT(BlueprintType)
+struct BLUEPRINTEXPORTER_API FBlueprintExportConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, Category = "Blueprint Exporter")
+	FString OutputDirectory = TEXT("Exported/Blueprints");
+
+	UPROPERTY(BlueprintReadWrite, Category = "Blueprint Exporter")
+	bool bGenerateMarkdown = true;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Blueprint Exporter")
+	bool bPrettyPrintJson = true;
+};
+
+/**
  * Blueprint Exporter Library
  * Provides functions to extract blueprint data for Claude Code integration
  */
@@ -62,6 +80,14 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Blueprint Exporter")
 	static int32 ExportAllBlueprints(const FString& OutputDirectory, bool bPrettyPrint = true, bool bGenerateMarkdown = true);
+
+	/**
+	 * Export all project blueprints using configuration struct
+	 * @param Config - Export configuration
+	 * @return Number of blueprints exported
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Blueprint Exporter")
+	static int32 ExportAllBlueprintsWithConfig(const FBlueprintExportConfig& Config);
 
 private:
 	// Internal serialization and generation functions
