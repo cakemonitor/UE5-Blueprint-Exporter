@@ -28,29 +28,45 @@ public:
 	/**
 	 * Extract complete blueprint data as JSON string
 	 * @param Blueprint - The blueprint to extract data from
+	 * @param bPrettyPrint - Whether to format JSON with indentation (default: true)
 	 * @return JSON string containing all blueprint information
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Blueprint Exporter")
-	static FString ExtractBlueprintData(UBlueprint* Blueprint);
+	static FString ExtractBlueprintData(UBlueprint* Blueprint, bool bPrettyPrint = true);
 
 	/**
 	 * Export blueprint to JSON file
 	 * @param Blueprint - The blueprint to export
 	 * @param FilePath - Output file path (absolute)
+	 * @param bPrettyPrint - Whether to format JSON with indentation (default: true)
 	 * @return True if export succeeded
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Blueprint Exporter")
-	static bool ExportBlueprintToFile(UBlueprint* Blueprint, const FString& FilePath);
+	static bool ExportBlueprintToFile(UBlueprint* Blueprint, const FString& FilePath, bool bPrettyPrint = true);
 
 	/**
-	 * Export all project blueprints to directory
+	 * Export blueprint to Markdown file
+	 * @param Blueprint - The blueprint to export
+	 * @param FilePath - Output file path (absolute)
+	 * @return True if export succeeded
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Blueprint Exporter")
+	static bool ExportBlueprintToMarkdown(UBlueprint* Blueprint, const FString& FilePath);
+
+	/**
+	 * Export all project blueprints to directory (JSON and Markdown)
 	 * @param OutputDirectory - Directory to export to
+	 * @param bPrettyPrint - Whether to format JSON with indentation (default: true)
+	 * @param bGenerateMarkdown - Whether to generate Markdown files alongside JSON (default: true)
 	 * @return Number of blueprints exported
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Blueprint Exporter")
-	static int32 ExportAllBlueprints(const FString& OutputDirectory);
+	static int32 ExportAllBlueprints(const FString& OutputDirectory, bool bPrettyPrint = true, bool bGenerateMarkdown = true);
 
 private:
+	// Internal serialization and generation functions
+	static FString GenerateMarkdownFromJson(TSharedPtr<FJsonObject> JsonObject, UBlueprint* Blueprint);
+
 	// Internal serialization functions
 	static TSharedPtr<FJsonObject> SerializeBlueprint(UBlueprint* Blueprint);
 	static TSharedPtr<FJsonObject> SerializeGraph(UEdGraph* Graph);

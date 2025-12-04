@@ -19,6 +19,8 @@
 #include "Engine/SCS_Node.h"
 #include "LevelEditor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Notifications/SNotificationList.h"
 #include "ToolMenus.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
@@ -35,7 +37,7 @@ DEFINE_LOG_CATEGORY(LogBlueprintExporter);
 // Main Export Functions
 // ============================================================================
 
-FString UBlueprintExporterLibrary::ExtractBlueprintData(UBlueprint* Blueprint)
+FString UBlueprintExporterLibrary::ExtractBlueprintData(UBlueprint* Blueprint, bool bPrettyPrint)
 {
 	if (!Blueprint)
 	{
@@ -47,13 +49,21 @@ FString UBlueprintExporterLibrary::ExtractBlueprintData(UBlueprint* Blueprint)
 
 	// Convert to string
 	FString OutputString;
-	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
-	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+	if (bPrettyPrint)
+	{
+		TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
+		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+	}
+	else
+	{
+		TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&OutputString);
+		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+	}
 
 	return OutputString;
 }
 
-bool UBlueprintExporterLibrary::ExportBlueprintToFile(UBlueprint* Blueprint, const FString& FilePath)
+bool UBlueprintExporterLibrary::ExportBlueprintToFile(UBlueprint* Blueprint, const FString& FilePath, bool bPrettyPrint)
 {
 	if (!Blueprint)
 	{
@@ -83,7 +93,7 @@ bool UBlueprintExporterLibrary::ExportBlueprintToFile(UBlueprint* Blueprint, con
 		}
 	}
 
-	FString JsonString = ExtractBlueprintData(Blueprint);
+	FString JsonString = ExtractBlueprintData(Blueprint, bPrettyPrint);
 
 	// Save to file
 	if (FFileHelper::SaveStringToFile(JsonString, *FilePath))
@@ -96,7 +106,7 @@ bool UBlueprintExporterLibrary::ExportBlueprintToFile(UBlueprint* Blueprint, con
 	return false;
 }
 
-int32 UBlueprintExporterLibrary::ExportAllBlueprints(const FString& OutputDirectory)
+int32 UBlueprintExporterLibrary::ExportAllBlueprints(const FString& OutputDirectory, bool bPrettyPrint, bool bGenerateMarkdown)
 {
 	if (OutputDirectory.IsEmpty())
 	{
@@ -132,21 +142,234 @@ int32 UBlueprintExporterLibrary::ExportAllBlueprints(const FString& OutputDirect
 			continue;
 		}
 
-		FString FileName = Blueprint->GetName() + TEXT(".json");
-		FString FilePath = FPaths::Combine(OutputDirectory, FileName);
+		// Get asset path and convert to output path with folder structure
+		// e.g., /Game/Characters/BP_Player -> OutputDirectory/Characters/BP_Player.json
+		FString AssetPath = AssetData.PackageName.ToString();
+		FString RelativePath = AssetPath;
 
-		if (ExportBlueprintToFile(Blueprint, FilePath))
+		// Remove /Game/ prefix
+		if (RelativePath.StartsWith(TEXT("/Game/")))
+		{
+			RelativePath = RelativePath.RightChop(6); // Remove "/Game/"
+		}
+
+		// Determine output path (with or without subdirectories)
+		FString Directory;
+		FString FileName = Blueprint->GetName();
+		FString TargetDirectory = OutputDirectory;
+
+		if (RelativePath.Split(TEXT("/"), &Directory, nullptr, ESearchCase::IgnoreCase, ESearchDir::FromEnd))
+		{
+			// Has subdirectories
+			TargetDirectory = FPaths::Combine(OutputDirectory, Directory);
+			if (!PlatformFile.DirectoryExists(*TargetDirectory))
+			{
+				PlatformFile.CreateDirectoryTree(*TargetDirectory);
+			}
+		}
+
+		// Export JSON
+		FString JsonPath = FPaths::Combine(TargetDirectory, FileName + TEXT(".json"));
+		if (ExportBlueprintToFile(Blueprint, JsonPath, bPrettyPrint))
 		{
 			ExportedCount++;
 		}
 		else
 		{
 			FailedCount++;
+			continue;
+		}
+
+		// Export Markdown if requested
+		if (bGenerateMarkdown)
+		{
+			FString MarkdownPath = FPaths::Combine(TargetDirectory, FileName + TEXT(".md"));
+			if (!ExportBlueprintToMarkdown(Blueprint, MarkdownPath))
+			{
+				UE_LOG(LogBlueprintExporter, Warning, TEXT("Failed to export markdown for: %s"), *FileName);
+			}
 		}
 	}
 
 	UE_LOG(LogBlueprintExporter, Log, TEXT("Exported %d blueprints to %s (%d failed)"), ExportedCount, *OutputDirectory, FailedCount);
 	return ExportedCount;
+}
+
+bool UBlueprintExporterLibrary::ExportBlueprintToMarkdown(UBlueprint* Blueprint, const FString& FilePath)
+{
+	if (!Blueprint)
+	{
+		UE_LOG(LogBlueprintExporter, Error, TEXT("ExportBlueprintToMarkdown: Invalid blueprint"));
+		return false;
+	}
+
+	TSharedPtr<FJsonObject> JsonObject = SerializeBlueprint(Blueprint);
+	FString MarkdownContent = GenerateMarkdownFromJson(JsonObject, Blueprint);
+
+	// Save to file
+	if (FFileHelper::SaveStringToFile(MarkdownContent, *FilePath))
+	{
+		UE_LOG(LogBlueprintExporter, Log, TEXT("Exported markdown to: %s"), *FilePath);
+		return true;
+	}
+
+	UE_LOG(LogBlueprintExporter, Error, TEXT("Failed to save markdown file: %s"), *FilePath);
+	return false;
+}
+
+FString UBlueprintExporterLibrary::GenerateMarkdownFromJson(TSharedPtr<FJsonObject> JsonObject, UBlueprint* Blueprint)
+{
+	FString Markdown;
+
+	// Header
+	FString Name = JsonObject->GetStringField(TEXT("name"));
+	FString ClassType = JsonObject->GetStringField(TEXT("class_type"));
+	FString Path = JsonObject->GetStringField(TEXT("path"));
+	FString ParentClass = JsonObject->HasField(TEXT("parent_class")) ? JsonObject->GetStringField(TEXT("parent_class")) : TEXT("None");
+
+	Markdown += FString::Printf(TEXT("# %s\n\n"), *Name);
+	Markdown += FString::Printf(TEXT("**Type:** %s  \n"), *ClassType);
+	Markdown += FString::Printf(TEXT("**Path:** `%s`  \n"), *Path);
+	Markdown += FString::Printf(TEXT("**Parent Class:** %s  \n\n"), *ParentClass);
+
+	// Components
+	const TArray<TSharedPtr<FJsonValue>>* ComponentsArray;
+	if (JsonObject->TryGetArrayField(TEXT("components"), ComponentsArray) && ComponentsArray->Num() > 0)
+	{
+		Markdown += TEXT("## Components\n\n");
+		for (const TSharedPtr<FJsonValue>& ComponentValue : *ComponentsArray)
+		{
+			TSharedPtr<FJsonObject> ComponentObj = ComponentValue->AsObject();
+			FString CompName = ComponentObj->GetStringField(TEXT("name"));
+			FString CompClass = ComponentObj->GetStringField(TEXT("class"));
+			Markdown += FString::Printf(TEXT("- **%s** (%s)\n"), *CompName, *CompClass);
+		}
+		Markdown += TEXT("\n");
+	}
+
+	// Variables
+	const TArray<TSharedPtr<FJsonValue>>* VariablesArray;
+	if (JsonObject->TryGetArrayField(TEXT("variables"), VariablesArray) && VariablesArray->Num() > 0)
+	{
+		Markdown += TEXT("## Variables\n\n");
+		Markdown += TEXT("| Name | Type | Category | Exposed |\n");
+		Markdown += TEXT("|------|------|----------|---------|\n");
+		for (const TSharedPtr<FJsonValue>& VarValue : *VariablesArray)
+		{
+			TSharedPtr<FJsonObject> VarObj = VarValue->AsObject();
+			FString VarName = VarObj->GetStringField(TEXT("name"));
+			FString VarType = VarObj->GetStringField(TEXT("type"));
+			FString VarCategory = VarObj->GetStringField(TEXT("category"));
+			bool bIsExposed = VarObj->GetBoolField(TEXT("is_exposed"));
+			Markdown += FString::Printf(TEXT("| %s | %s | %s | %s |\n"),
+				*VarName, *VarType, *VarCategory, bIsExposed ? TEXT("Yes") : TEXT("No"));
+		}
+		Markdown += TEXT("\n");
+	}
+
+	// Functions
+	const TArray<TSharedPtr<FJsonValue>>* FunctionsArray;
+	if (JsonObject->TryGetArrayField(TEXT("functions"), FunctionsArray) && FunctionsArray->Num() > 0)
+	{
+		Markdown += TEXT("## Functions\n\n");
+		for (const TSharedPtr<FJsonValue>& FuncValue : *FunctionsArray)
+		{
+			TSharedPtr<FJsonObject> FuncObj = FuncValue->AsObject();
+			FString FuncName = FuncObj->GetStringField(TEXT("name"));
+
+			// Build parameters string
+			FString ParamsStr;
+			const TArray<TSharedPtr<FJsonValue>>* ParamsArray;
+			if (FuncObj->TryGetArrayField(TEXT("parameters"), ParamsArray))
+			{
+				for (int32 i = 0; i < ParamsArray->Num(); i++)
+				{
+					TSharedPtr<FJsonObject> ParamObj = (*ParamsArray)[i]->AsObject();
+					FString ParamName = ParamObj->GetStringField(TEXT("name"));
+					FString ParamType = ParamObj->GetStringField(TEXT("type"));
+					ParamsStr += FString::Printf(TEXT("%s: %s"), *ParamName, *ParamType);
+					if (i < ParamsArray->Num() - 1)
+					{
+						ParamsStr += TEXT(", ");
+					}
+				}
+			}
+
+			Markdown += FString::Printf(TEXT("### %s(%s)\n\n"), *FuncName, *ParamsStr);
+
+			// Include basic graph info
+			const TSharedPtr<FJsonObject>* GraphObjPtr;
+			if (FuncObj->TryGetObjectField(TEXT("graph"), GraphObjPtr))
+			{
+				const TArray<TSharedPtr<FJsonValue>>* NodesArray;
+				if ((*GraphObjPtr)->TryGetArrayField(TEXT("nodes"), NodesArray))
+				{
+					Markdown += FString::Printf(TEXT("**Nodes:** %d\n\n"), NodesArray->Num());
+				}
+			}
+		}
+	}
+
+	// Graphs
+	const TArray<TSharedPtr<FJsonValue>>* GraphsArray;
+	if (JsonObject->TryGetArrayField(TEXT("graphs"), GraphsArray) && GraphsArray->Num() > 0)
+	{
+		Markdown += TEXT("## Graphs\n\n");
+		for (const TSharedPtr<FJsonValue>& GraphValue : *GraphsArray)
+		{
+			TSharedPtr<FJsonObject> GraphObj = GraphValue->AsObject();
+			FString GraphName = GraphObj->GetStringField(TEXT("name"));
+
+			const TArray<TSharedPtr<FJsonValue>>* NodesArray;
+			if (GraphObj->TryGetArrayField(TEXT("nodes"), NodesArray))
+			{
+				Markdown += FString::Printf(TEXT("### %s\n\n"), *GraphName);
+				Markdown += FString::Printf(TEXT("**Total Nodes:** %d\n\n"), NodesArray->Num());
+
+				// List node types
+				TMap<FString, int32> NodeTypeCounts;
+				for (const TSharedPtr<FJsonValue>& NodeValue : *NodesArray)
+				{
+					TSharedPtr<FJsonObject> NodeObj = NodeValue->AsObject();
+					FString NodeType = NodeObj->GetStringField(TEXT("type"));
+					NodeTypeCounts.FindOrAdd(NodeType, 0)++;
+				}
+
+				if (NodeTypeCounts.Num() > 0)
+				{
+					Markdown += TEXT("**Node Types:**\n\n");
+					for (const TPair<FString, int32>& Pair : NodeTypeCounts)
+					{
+						Markdown += FString::Printf(TEXT("- %s: %d\n"), *Pair.Key, Pair.Value);
+					}
+					Markdown += TEXT("\n");
+				}
+			}
+		}
+	}
+
+	// Dependencies
+	const TArray<TSharedPtr<FJsonValue>>* DependenciesArray;
+	if (JsonObject->TryGetArrayField(TEXT("dependencies"), DependenciesArray) && DependenciesArray->Num() > 0)
+	{
+		Markdown += TEXT("## Dependencies\n\n");
+		int32 Count = FMath::Min(DependenciesArray->Num(), 10); // Limit to first 10
+		for (int32 i = 0; i < Count; i++)
+		{
+			FString Dependency = (*DependenciesArray)[i]->AsString();
+			Markdown += FString::Printf(TEXT("- `%s`\n"), *Dependency);
+		}
+		if (DependenciesArray->Num() > 10)
+		{
+			Markdown += FString::Printf(TEXT("\n_...and %d more_\n"), DependenciesArray->Num() - 10);
+		}
+		Markdown += TEXT("\n");
+	}
+
+	Markdown += TEXT("---\n\n");
+	Markdown += TEXT("_Generated by Blueprint Exporter Plugin_\n");
+
+	return Markdown;
 }
 
 // ============================================================================
@@ -740,14 +963,16 @@ private:
 	{
 		UE_LOG(LogBlueprintExporter, Log, TEXT("Starting blueprint export from menu..."));
 
-		// Get project directory and build output path
 		FString ProjectDir = FPaths::ProjectDir();
 		FString OutputDir = FPaths::Combine(ProjectDir, TEXT("Exported"), TEXT("Blueprints"));
 
-		// Call the export function
-		int32 ExportedCount = UBlueprintExporterLibrary::ExportAllBlueprints(OutputDir);
+		int32 ExportedCount = UBlueprintExporterLibrary::ExportAllBlueprints(OutputDir, true, true);
 
 		UE_LOG(LogBlueprintExporter, Log, TEXT("Export complete! Exported %d blueprints to: %s"), ExportedCount, *OutputDir);
+
+		FNotificationInfo Info(FText::FromString(FString::Printf(TEXT("Exported %d blueprints to Exported/Blueprints/"), ExportedCount)));
+		Info.ExpireDuration = 3.0f;
+		FSlateNotificationManager::Get().AddNotification(Info);
 	}
 };
 

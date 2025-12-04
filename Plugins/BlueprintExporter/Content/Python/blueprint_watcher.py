@@ -50,25 +50,35 @@ def ensure_output_dir():
     return output_path
 
 
-def get_output_path(blueprint_path: str, extension: str) -> str:
+def get_output_path(blueprint_path: str, blueprint_name: str, extension: str) -> str:
     """
     Convert blueprint path to output file path
     /Game/Characters/BP_Player -> Exported/Blueprints/Characters/BP_Player.json
     """
     output_root = ensure_output_dir()
 
-    # Remove /Game/ prefix
-    relative_path = blueprint_path.replace("/Game/", "")
+    # Blueprint paths are like /Game/Folder/AssetName.AssetName
+    # We need to strip the asset name part (after last dot) to get the package path
+    package_path = blueprint_path
+    if '.' in blueprint_path:
+        package_path = blueprint_path.rsplit('.', 1)[0]  # Remove .AssetName suffix
 
-    # Split into directory and filename
-    parts = relative_path.split("/")
-    filename = parts[-1] + extension
-    subdirs = parts[:-1]
+    # Remove /Game/ prefix
+    relative_path = package_path.replace("/Game/", "")
+
+    # Split into directory parts (excluding the blueprint name itself)
+    if '/' in relative_path:
+        parts = relative_path.split("/")
+        subdirs = parts[:-1]  # All parts EXCEPT the last one (which is the blueprint name)
+    else:
+        subdirs = []
 
     # Create subdirectory structure
-    subdir_path = os.path.join(output_root, *subdirs)
+    subdir_path = os.path.join(output_root, *subdirs) if subdirs else output_root
     os.makedirs(subdir_path, exist_ok=True)
 
+    # Use the blueprint name directly for the filename
+    filename = blueprint_name + extension
     return os.path.join(subdir_path, filename)
 
 
@@ -440,12 +450,13 @@ def export_blueprint(blueprint: unreal.Blueprint) -> bool:
     """Export a single blueprint to JSON and Markdown"""
     try:
         blueprint_path = blueprint.get_path_name()
+        blueprint_name = blueprint.get_name()
 
         # Extract data
         data = extract_blueprint_data_full(blueprint)
 
         # Save JSON
-        json_path = get_output_path(blueprint_path, ".json")
+        json_path = get_output_path(blueprint_path, blueprint_name, ".json")
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
@@ -454,7 +465,7 @@ def export_blueprint(blueprint: unreal.Blueprint) -> bool:
         # Generate and save Markdown
         if GENERATE_MARKDOWN:
             md_content = generate_markdown(data)
-            md_path = get_output_path(blueprint_path, ".md")
+            md_path = get_output_path(blueprint_path, blueprint_name, ".md")
             with open(md_path, 'w', encoding='utf-8') as f:
                 f.write(md_content)
 
