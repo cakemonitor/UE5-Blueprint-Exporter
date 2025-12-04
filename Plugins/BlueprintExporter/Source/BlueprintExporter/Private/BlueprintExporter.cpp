@@ -629,8 +629,14 @@ public:
 			// Add menu entry to Tools menu
 			UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FBlueprintExporterModule::RegisterMenus));
 
-			// Register Python convenience function
-			RegisterPythonCommand();
+#if defined(WITH_PYTHON) && WITH_PYTHON
+			// Register Python convenience function after Python is initialized
+			if (FModuleManager::Get().IsModuleLoaded("PythonScriptPlugin"))
+			{
+				IPythonScriptPlugin& PythonPlugin = FModuleManager::GetModuleChecked<IPythonScriptPlugin>("PythonScriptPlugin");
+				PythonPlugin.OnPythonInitialized().AddRaw(this, &FBlueprintExporterModule::RegisterPythonCommand);
+			}
+#endif
 		}
 	}
 
@@ -638,6 +644,14 @@ public:
 	{
 		UToolMenus::UnRegisterStartupCallback(this);
 		UToolMenus::UnregisterOwner(this);
+
+#if defined(WITH_PYTHON) && WITH_PYTHON
+		if (FModuleManager::Get().IsModuleLoaded("PythonScriptPlugin"))
+		{
+			IPythonScriptPlugin& PythonPlugin = FModuleManager::GetModuleChecked<IPythonScriptPlugin>("PythonScriptPlugin");
+			PythonPlugin.OnPythonInitialized().RemoveAll(this);
+		}
+#endif
 
 		UE_LOG(LogBlueprintExporter, Log, TEXT("BlueprintExporter module shutdown"));
 	}
@@ -710,11 +724,13 @@ private:
 		), *PluginPythonDir);
 
 		// Execute the Python code
+		IPythonScriptPlugin& PythonPlugin = FModuleManager::LoadModuleChecked<IPythonScriptPlugin>("PythonScriptPlugin");
+
 		FPythonCommandEx PythonCommand;
-		PythonCommand.ExecutionMode = EPythonCommandExecutionMode::ExecuteStatement;
+		PythonCommand.ExecutionMode = EPythonCommandExecutionMode::ExecuteFile;
 		PythonCommand.Command = PythonScript;
 
-		FPythonScriptPlugin::Get()->ExecPythonCommandEx(PythonCommand);
+		PythonPlugin.ExecPythonCommandEx(PythonCommand);
 #else
 		UE_LOG(LogBlueprintExporter, Log, TEXT("Python support not compiled in - skipping Python command registration"));
 #endif

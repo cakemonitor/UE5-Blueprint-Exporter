@@ -42,6 +42,7 @@ public class BlueprintExporter : ModuleRules
 		if (Target.bBuildEditor)
 		{
 			PrivateDependencyModuleNames.Add("PythonScriptPlugin");
+			PublicDefinitions.Add("WITH_PYTHON=1");
 		}
 	}
 }
