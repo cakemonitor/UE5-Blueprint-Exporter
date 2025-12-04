@@ -22,7 +22,8 @@ public class BlueprintExporter : ModuleRules
 				"Json",
 				"JsonUtilities",
 				"AssetRegistry",
-				"EditorSubsystem"
+				"EditorSubsystem",
+				"DeveloperSettings"
 			}
 		);
 

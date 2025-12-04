@@ -7,6 +7,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Engine/Blueprint.h"
+#include "Engine/DeveloperSettings.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
@@ -14,6 +15,27 @@
 
 // Custom log category for Blueprint Exporter
 DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintExporter, Log, All);
+
+/**
+ * Project settings for Blueprint Exporter
+ */
+UCLASS(Config=Editor, DefaultConfig, meta=(DisplayName="Blueprint Exporter"))
+class BLUEPRINTEXPORTER_API UBlueprintExporterSettings : public UDeveloperSettings
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(Config, EditAnywhere, Category = "Export Settings", meta = (DisplayName = "Output Directory"))
+	FString OutputDirectory = TEXT("Exported/Blueprints");
+
+	UPROPERTY(Config, EditAnywhere, Category = "Export Settings", meta = (DisplayName = "Generate Markdown Files"))
+	bool bGenerateMarkdown = true;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Export Settings", meta = (DisplayName = "Pretty Print JSON"))
+	bool bPrettyPrintJson = true;
+
+	virtual FName GetCategoryName() const override { return TEXT("Plugins"); }
+};
 
 /**
  * Configuration for blueprint export operations

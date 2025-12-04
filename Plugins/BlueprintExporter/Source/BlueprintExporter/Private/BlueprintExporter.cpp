@@ -19,8 +19,6 @@
 #include "Engine/SCS_Node.h"
 #include "LevelEditor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
-#include "Framework/Notifications/NotificationManager.h"
-#include "Widgets/Notifications/SNotificationList.h"
 #include "ToolMenus.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
@@ -46,18 +44,31 @@ FString UBlueprintExporterLibrary::ExtractBlueprintData(UBlueprint* Blueprint, b
 	}
 
 	TSharedPtr<FJsonObject> JsonObject = SerializeBlueprint(Blueprint);
+	if (!JsonObject.IsValid())
+	{
+		UE_LOG(LogBlueprintExporter, Error, TEXT("ExtractBlueprintData: Failed to serialize blueprint"));
+		return TEXT("{}");
+	}
 
 	// Convert to string
 	FString OutputString;
+	bool bSuccess = false;
+
 	if (bPrettyPrint)
 	{
 		TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
-		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+		bSuccess = FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
 	}
 	else
 	{
 		TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&OutputString);
-		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+		bSuccess = FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+	}
+
+	if (!bSuccess)
+	{
+		UE_LOG(LogBlueprintExporter, Error, TEXT("ExtractBlueprintData: Failed to serialize JSON to string"));
+		return TEXT("{}");
 	}
 
 	return OutputString;
@@ -130,11 +141,16 @@ int32 UBlueprintExporterLibrary::ExportAllBlueprints(const FString& OutputDirect
 	TArray<FAssetData> AssetDataList;
 	AssetRegistry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AssetDataList);
 
+	FScopedSlowTask Progress(AssetDataList.Num(), FText::FromString("Exporting Blueprints"));
+	Progress.MakeDialog();
+
 	int32 ExportedCount = 0;
 	int32 FailedCount = 0;
 
 	for (const FAssetData& AssetData : AssetDataList)
 	{
+		Progress.EnterProgressFrame(1.0f, FText::FromString(FString::Printf(TEXT("Exporting %s"), *AssetData.AssetName.ToString())));
+
 		UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset());
 		if (!Blueprint)
 		{
@@ -385,6 +401,12 @@ FString UBlueprintExporterLibrary::GenerateMarkdownFromJson(TSharedPtr<FJsonObje
 
 TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializeBlueprint(UBlueprint* Blueprint)
 {
+	if (!Blueprint)
+	{
+		UE_LOG(LogBlueprintExporter, Error, TEXT("SerializeBlueprint: Invalid blueprint"));
+		return MakeShareable(new FJsonObject);
+	}
+
 	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
 
 	// Basic info
@@ -444,6 +466,12 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializeGraph(UEdGraph* Grap
 {
 	TSharedPtr<FJsonObject> GraphObject = MakeShareable(new FJsonObject);
 
+	if (!Graph)
+	{
+		UE_LOG(LogBlueprintExporter, Warning, TEXT("SerializeGraph: Invalid graph"));
+		return GraphObject;
+	}
+
 	GraphObject->SetStringField(TEXT("name"), Graph->GetName());
 
 	// Serialize nodes
@@ -464,6 +492,12 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializeGraph(UEdGraph* Grap
 TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializeNode(UEdGraphNode* Node)
 {
 	TSharedPtr<FJsonObject> NodeObject = MakeShareable(new FJsonObject);
+
+	if (!Node)
+	{
+		UE_LOG(LogBlueprintExporter, Warning, TEXT("SerializeNode: Invalid node"));
+		return NodeObject;
+	}
 
 	NodeObject->SetStringField(TEXT("id"), Node->GetName());
 	NodeObject->SetStringField(TEXT("type"), NodeTypeToString(Node));
@@ -954,12 +988,12 @@ private:
 		FToolMenuOwnerScoped OwnerScoped(this);
 
 		UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Tools");
-		FToolMenuSection& Section = Menu->AddSection("BlueprintExporter", FText::FromString("Blueprint Documentation"));
+		FToolMenuSection& Section = Menu->AddSection("BlueprintExporter", FText::FromString("Blueprint Exporter"));
 
 		Section.AddMenuEntry(
 			"ExportBlueprints",
-			FText::FromString("Export Blueprint Documentation"),
-			FText::FromString("Export all blueprints to JSON and Markdown documentation"),
+			FText::FromString("Export Blueprints"),
+			FText::FromString("Export all blueprints to JSON and Markdown"),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateStatic(&FBlueprintExporterModule::ExecuteExport))
 		);
@@ -968,16 +1002,14 @@ private:
 	{
 		UE_LOG(LogBlueprintExporter, Log, TEXT("Starting blueprint export from menu..."));
 
+		const UBlueprintExporterSettings* Settings = GetDefault<UBlueprintExporterSettings>();
 		FString ProjectDir = FPaths::ProjectDir();
-		FString OutputDir = FPaths::Combine(ProjectDir, TEXT("Exported"), TEXT("Blueprints"));
+		FString OutputDir = FPaths::Combine(ProjectDir, Settings->OutputDirectory);
 
-		int32 ExportedCount = UBlueprintExporterLibrary::ExportAllBlueprints(OutputDir, true, true);
+		// Export with pretty-printed JSON and markdown generation
+		int32 ExportedCount = UBlueprintExporterLibrary::ExportAllBlueprints(OutputDir, Settings->bPrettyPrintJson, Settings->bGenerateMarkdown);
 
 		UE_LOG(LogBlueprintExporter, Log, TEXT("Export complete! Exported %d blueprints to: %s"), ExportedCount, *OutputDir);
-
-		FNotificationInfo Info(FText::FromString(FString::Printf(TEXT("Exported %d blueprints to Exported/Blueprints/"), ExportedCount)));
-		Info.ExpireDuration = 3.0f;
-		FSlateNotificationManager::Get().AddNotification(Info);
 	}
 };
 
