@@ -53,27 +53,6 @@ FString UBlueprintExporterLibrary::ExtractBlueprintData(UBlueprint* Blueprint)
 	return OutputString;
 }
 
-TArray<UBlueprint*> UBlueprintExporterLibrary::GetAllProjectBlueprints()
-{
-	TArray<UBlueprint*> Blueprints;
-
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-
-	TArray<FAssetData> AssetDataList;
-	AssetRegistry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AssetDataList);
-
-	for (const FAssetData& AssetData : AssetDataList)
-	{
-		if (UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset()))
-		{
-			Blueprints.Add(Blueprint);
-		}
-	}
-
-	return Blueprints;
-}
-
 bool UBlueprintExporterLibrary::ExportBlueprintToFile(UBlueprint* Blueprint, const FString& FilePath)
 {
 	if (!Blueprint)
@@ -135,12 +114,18 @@ int32 UBlueprintExporterLibrary::ExportAllBlueprints(const FString& OutputDirect
 		}
 	}
 
-	TArray<UBlueprint*> Blueprints = GetAllProjectBlueprints();
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	TArray<FAssetData> AssetDataList;
+	AssetRegistry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AssetDataList);
+
 	int32 ExportedCount = 0;
 	int32 FailedCount = 0;
 
-	for (UBlueprint* Blueprint : Blueprints)
+	for (const FAssetData& AssetData : AssetDataList)
 	{
+		UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset());
 		if (!Blueprint)
 		{
 			FailedCount++;

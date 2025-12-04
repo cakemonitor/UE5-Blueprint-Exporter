@@ -34,13 +34,6 @@ public:
 	static FString ExtractBlueprintData(UBlueprint* Blueprint);
 
 	/**
-	 * Get all blueprints in the project
-	 * @return Array of all blueprint assets
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Blueprint Exporter")
-	static TArray<UBlueprint*> GetAllProjectBlueprints();
-
-	/**
 	 * Export blueprint to JSON file
 	 * @param Blueprint - The blueprint to export
 	 * @param FilePath - Output file path (absolute)
