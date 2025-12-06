@@ -474,17 +474,56 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializeGraph(UEdGraph* Grap
 
 	GraphObject->SetStringField(TEXT("name"), Graph->GetName());
 
-	// Serialize nodes
-	TArray<TSharedPtr<FJsonValue>> NodesArray;
+	// === NEW: Execution-flow ordering ===
+
+	// 1. Collect all nodes into unexported set
+	TSet<UEdGraphNode*> UnexportedNodes;
 	for (UEdGraphNode* Node : Graph->Nodes)
 	{
 		if (Node)
 		{
-			NodesArray.Add(MakeShareable(new FJsonValueObject(SerializeNode(Node))));
+			UnexportedNodes.Add(Node);
 		}
 	}
 
-	GraphObject->SetArrayField(TEXT("nodes"), NodesArray);
+	TArray<TSharedPtr<FJsonValue>> OrderedNodesArray;
+
+	// 2. Find and sort entry points (Event nodes, Function entry nodes)
+	TArray<UEdGraphNode*> EntryPoints;
+	for (UEdGraphNode* Node : Graph->Nodes)
+	{
+		if (Node && IsEntryPointNode(Node))
+		{
+			EntryPoints.Add(Node);
+		}
+	}
+
+	// Sort entry points alphabetically for determinism
+	EntryPoints.Sort([](const UEdGraphNode& A, const UEdGraphNode& B) {
+		return A.GetName() < B.GetName();
+	});
+
+	// 3. Export each entry point and its execution flow
+	for (UEdGraphNode* EntryPoint : EntryPoints)
+	{
+		ExportNodeRecursive(EntryPoint, UnexportedNodes, OrderedNodesArray);
+	}
+
+	// 4. Export remaining nodes (data nodes, disconnected nodes, etc.)
+	TArray<UEdGraphNode*> RemainingNodes = UnexportedNodes.Array();
+	RemainingNodes.Sort([](const UEdGraphNode& A, const UEdGraphNode& B) {
+		return A.GetName() < B.GetName();
+	});
+
+	for (UEdGraphNode* Node : RemainingNodes)
+	{
+		OrderedNodesArray.Add(
+			MakeShareable(new FJsonValueObject(SerializeNode(Node)))
+		);
+		UnexportedNodes.Remove(Node);
+	}
+
+	GraphObject->SetArrayField(TEXT("nodes"), OrderedNodesArray);
 
 	return GraphObject;
 }
@@ -660,6 +699,15 @@ TArray<TSharedPtr<FJsonValue>> UBlueprintExporterLibrary::SerializeComponents(UB
 		}
 	}
 
+	// Sort components alphabetically by name for determinism
+	ComponentsArray.Sort([](const TSharedPtr<FJsonValue>& A, const TSharedPtr<FJsonValue>& B) {
+		TSharedPtr<FJsonObject> ObjA = A->AsObject();
+		TSharedPtr<FJsonObject> ObjB = B->AsObject();
+		FString NameA = ObjA->GetStringField(TEXT("name"));
+		FString NameB = ObjB->GetStringField(TEXT("name"));
+		return NameA < NameB;
+	});
+
 	return ComponentsArray;
 }
 
@@ -735,6 +783,14 @@ TArray<TSharedPtr<FJsonValue>> UBlueprintExporterLibrary::ExtractDependencies(UB
 		ProcessGraph(Graph);
 	}
 
+	// Sort dependencies alphabetically for determinism
+	DependenciesArray.Sort([](const TSharedPtr<FJsonValue>& A, const TSharedPtr<FJsonValue>& B) {
+		FString StrA, StrB;
+		A->TryGetString(StrA);
+		B->TryGetString(StrB);
+		return StrA < StrB;
+	});
+
 	return DependenciesArray;
 }
 
@@ -801,6 +857,140 @@ TArray<UEdGraphNode*> UBlueprintExporterLibrary::GetConnectedNodes(UEdGraphNode*
 	}
 
 	return ConnectedNodes;
+}
+
+// ============================================================================
+// Execution-Flow Ordering Helpers
+// ============================================================================
+
+bool UBlueprintExporterLibrary::IsEntryPointNode(UEdGraphNode* Node)
+{
+	if (!Node)
+	{
+		return false;
+	}
+
+	// Check if node is an Event node (most common entry points)
+	if (Cast<UK2Node_Event>(Node))
+	{
+		return true;
+	}
+
+	// Check for function entry nodes (for function graphs)
+	if (Cast<UK2Node_FunctionEntry>(Node))
+	{
+		return true;
+	}
+
+	// Additional entry point types could be added here:
+	// - UK2Node_ActorBoundEvent
+	// - UK2Node_ComponentBoundEvent
+	// - UK2Node_InputAction
+	// - UK2Node_Timeline (has its own execution flow)
+
+	return false;
+}
+
+TArray<UEdGraphPin*> UBlueprintExporterLibrary::GetSortedExecOutputPins(UEdGraphNode* Node)
+{
+	TArray<UEdGraphPin*> ExecOutputs;
+
+	if (!Node)
+	{
+		return ExecOutputs;
+	}
+
+	for (UEdGraphPin* Pin : Node->Pins)
+	{
+		if (Pin &&
+			Pin->Direction == EGPD_Output &&
+			Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
+		{
+			ExecOutputs.Add(Pin);
+		}
+	}
+
+	// Sort alphabetically for determinism
+	ExecOutputs.Sort([](const UEdGraphPin& A, const UEdGraphPin& B) {
+		return A.GetName() < B.GetName();
+	});
+
+	return ExecOutputs;
+}
+
+void UBlueprintExporterLibrary::ExportNodeRecursive(
+	UEdGraphNode* Node,
+	TSet<UEdGraphNode*>& UnexportedNodes,
+	TArray<TSharedPtr<FJsonValue>>& OrderedNodesArray)
+{
+	// Already exported?
+	if (!Node || !UnexportedNodes.Contains(Node))
+	{
+		return;
+	}
+
+	// === BACKTRACK: Export input dependencies first ===
+	for (UEdGraphPin* Pin : Node->Pins)
+	{
+		if (Pin && Pin->Direction == EGPD_Input)
+		{
+			// Sort linked pins for determinism
+			TArray<UEdGraphPin*> SortedLinkedPins = Pin->LinkedTo;
+			SortedLinkedPins.Sort([](const UEdGraphPin& A, const UEdGraphPin& B) {
+				if (A.GetOwningNode() != B.GetOwningNode())
+				{
+					return A.GetOwningNode()->GetName() < B.GetOwningNode()->GetName();
+				}
+				return A.GetName() < B.GetName();
+			});
+
+			for (UEdGraphPin* LinkedPin : SortedLinkedPins)
+			{
+				if (LinkedPin && LinkedPin->GetOwningNode())
+				{
+					ExportNodeRecursive(
+						LinkedPin->GetOwningNode(),
+						UnexportedNodes,
+						OrderedNodesArray
+					);
+				}
+			}
+		}
+	}
+
+	// === EXPORT: Add this node to output ===
+	OrderedNodesArray.Add(
+		MakeShareable(new FJsonValueObject(SerializeNode(Node)))
+	);
+	UnexportedNodes.Remove(Node);
+
+	// === FORWARD: Follow exec flow ===
+	TArray<UEdGraphPin*> ExecOutputs = GetSortedExecOutputPins(Node);
+
+	for (UEdGraphPin* Pin : ExecOutputs)
+	{
+		// Sort linked pins for determinism
+		TArray<UEdGraphPin*> SortedLinkedPins = Pin->LinkedTo;
+		SortedLinkedPins.Sort([](const UEdGraphPin& A, const UEdGraphPin& B) {
+			if (A.GetOwningNode() != B.GetOwningNode())
+			{
+				return A.GetOwningNode()->GetName() < B.GetOwningNode()->GetName();
+			}
+			return A.GetName() < B.GetName();
+		});
+
+		for (UEdGraphPin* LinkedPin : SortedLinkedPins)
+		{
+			if (LinkedPin && LinkedPin->GetOwningNode())
+			{
+				ExportNodeRecursive(
+					LinkedPin->GetOwningNode(),
+					UnexportedNodes,
+					OrderedNodesArray
+				);
+			}
+		}
+	}
 }
 
 // ============================================================================

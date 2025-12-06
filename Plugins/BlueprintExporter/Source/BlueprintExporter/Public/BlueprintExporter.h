@@ -130,4 +130,13 @@ private:
 	static FString NodeTypeToString(UEdGraphNode* Node);
 	static FString GetNodeCategory(UEdGraphNode* Node);
 	static TArray<UEdGraphNode*> GetConnectedNodes(UEdGraphNode* Node);
+
+	// Execution-flow ordering helpers
+	static bool IsEntryPointNode(UEdGraphNode* Node);
+	static TArray<UEdGraphPin*> GetSortedExecOutputPins(UEdGraphNode* Node);
+	static void ExportNodeRecursive(
+		UEdGraphNode* Node,
+		TSet<UEdGraphNode*>& UnexportedNodes,
+		TArray<TSharedPtr<FJsonValue>>& OrderedNodesArray
+	);
 };
