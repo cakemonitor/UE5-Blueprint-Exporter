@@ -923,11 +923,14 @@ void UBlueprintExporterLibrary::ExportNodeRecursive(
 	TSet<UEdGraphNode*>& UnexportedNodes,
 	TArray<TSharedPtr<FJsonValue>>& OrderedNodesArray)
 {
-	// Already exported?
+	// Already exported or being processed?
 	if (!Node || !UnexportedNodes.Contains(Node))
 	{
 		return;
 	}
+
+	// Mark as being processed to prevent infinite recursion
+	UnexportedNodes.Remove(Node);
 
 	// === BACKTRACK: Export input dependencies first ===
 	for (UEdGraphPin* Pin : Node->Pins)
@@ -962,7 +965,6 @@ void UBlueprintExporterLibrary::ExportNodeRecursive(
 	OrderedNodesArray.Add(
 		MakeShareable(new FJsonValueObject(SerializeNode(Node)))
 	);
-	UnexportedNodes.Remove(Node);
 
 	// === FORWARD: Follow exec flow ===
 	TArray<UEdGraphPin*> ExecOutputs = GetSortedExecOutputPins(Node);
