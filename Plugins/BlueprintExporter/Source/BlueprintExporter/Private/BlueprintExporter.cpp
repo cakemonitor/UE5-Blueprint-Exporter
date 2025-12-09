@@ -10,6 +10,7 @@
 #include "K2Node_CallFunction.h"
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
+#include "K2Node_Knot.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -478,11 +479,11 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializeGraph(UEdGraph* Grap
 
 	// === NEW: Execution-flow ordering ===
 
-	// 1. Collect all nodes into unexported set
+	// 1. Collect all nodes into unexported set (excluding knot nodes)
 	TSet<UEdGraphNode*> UnexportedNodes;
 	for (UEdGraphNode* Node : Graph->Nodes)
 	{
-		if (Node)
+		if (Node && !Cast<UK2Node_Knot>(Node))
 		{
 			UnexportedNodes.Add(Node);
 		}
@@ -490,11 +491,11 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializeGraph(UEdGraph* Grap
 
 	TArray<TSharedPtr<FJsonValue>> OrderedNodesArray;
 
-	// 2. Find and sort entry points (Event nodes, Function entry nodes)
+	// 2. Find and sort entry points (Event nodes, Function entry nodes, excluding knots)
 	TArray<UEdGraphNode*> EntryPoints;
 	for (UEdGraphNode* Node : Graph->Nodes)
 	{
-		if (Node && IsEntryPointNode(Node))
+		if (Node && !Cast<UK2Node_Knot>(Node) && IsEntryPointNode(Node))
 		{
 			EntryPoints.Add(Node);
 		}
@@ -572,18 +573,23 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializePin(UEdGraphPin* Pin
 		PinObject->SetStringField(TEXT("default_value"), Pin->DefaultValue);
 	}
 
-	// Pin-to-pin connections (minimal format)
+	// Pin-to-pin connections (minimal format, resolving knot nodes)
 	if (Pin->LinkedTo.Num() > 0)
 	{
 		TArray<TSharedPtr<FJsonValue>> ConnectionsArray;
 		for (UEdGraphPin* LinkedPin : Pin->LinkedTo)
 		{
-			if (LinkedPin && LinkedPin->GetOwningNode())
+			TArray<UEdGraphPin*> ResolvedPins = ResolveKnotChainMulti(LinkedPin);
+
+			for (UEdGraphPin* ResolvedPin : ResolvedPins)
 			{
-				TSharedPtr<FJsonObject> ConnectionObj = MakeShareable(new FJsonObject);
-				ConnectionObj->SetStringField(TEXT("node"), LinkedPin->GetOwningNode()->GetName());
-				ConnectionObj->SetStringField(TEXT("pin"), LinkedPin->GetName());
-				ConnectionsArray.Add(MakeShareable(new FJsonValueObject(ConnectionObj)));
+				if (ResolvedPin && ResolvedPin->GetOwningNode())
+				{
+					TSharedPtr<FJsonObject> ConnectionObj = MakeShareable(new FJsonObject);
+					ConnectionObj->SetStringField(TEXT("node"), ResolvedPin->GetOwningNode()->GetName());
+					ConnectionObj->SetStringField(TEXT("pin"), ResolvedPin->GetName());
+					ConnectionsArray.Add(MakeShareable(new FJsonValueObject(ConnectionObj)));
+				}
 			}
 		}
 		PinObject->SetArrayField(TEXT("to"), ConnectionsArray);
@@ -840,6 +846,51 @@ TArray<UEdGraphNode*> UBlueprintExporterLibrary::GetConnectedNodes(UEdGraphNode*
 	}
 
 	return ConnectedNodes;
+}
+
+// ============================================================================
+// Knot Node Resolution
+// ============================================================================
+
+TArray<UEdGraphPin*> UBlueprintExporterLibrary::ResolveKnotChainMulti(UEdGraphPin* Pin)
+{
+	TArray<UEdGraphPin*> Results;
+
+	if (!Pin || !Pin->GetOwningNode())
+	{
+		Results.Add(Pin);
+		return Results;
+	}
+
+	UK2Node_Knot* KnotNode = Cast<UK2Node_Knot>(Pin->GetOwningNode());
+	if (!KnotNode)
+	{
+		Results.Add(Pin);
+		return Results;
+	}
+
+	UEdGraphPin* OppositePin = nullptr;
+	for (UEdGraphPin* KnotPin : KnotNode->Pins)
+	{
+		if (KnotPin && KnotPin->Direction != Pin->Direction)
+		{
+			OppositePin = KnotPin;
+			break;
+		}
+	}
+
+	if (!OppositePin || OppositePin->LinkedTo.Num() == 0)
+	{
+		return Results;
+	}
+
+	for (UEdGraphPin* LinkedPin : OppositePin->LinkedTo)
+	{
+		TArray<UEdGraphPin*> ResolvedPins = ResolveKnotChainMulti(LinkedPin);
+		Results.Append(ResolvedPins);
+	}
+
+	return Results;
 }
 
 // ============================================================================

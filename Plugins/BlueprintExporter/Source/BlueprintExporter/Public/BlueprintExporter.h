@@ -131,6 +131,9 @@ private:
 	static FString GetNodeCategory(UEdGraphNode* Node);
 	static TArray<UEdGraphNode*> GetConnectedNodes(UEdGraphNode* Node);
 
+	// Knot node resolution
+	static TArray<UEdGraphPin*> ResolveKnotChainMulti(UEdGraphPin* Pin);
+
 	// Execution-flow ordering helpers
 	static bool IsEntryPointNode(UEdGraphNode* Node);
 	static TArray<UEdGraphPin*> GetSortedExecOutputPins(UEdGraphNode* Node);
