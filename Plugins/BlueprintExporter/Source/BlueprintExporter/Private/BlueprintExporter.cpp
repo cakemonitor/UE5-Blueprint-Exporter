@@ -543,33 +543,17 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializeNode(UEdGraphNode* N
 	NodeObject->SetStringField(TEXT("id"), Node->GetName());
 	NodeObject->SetStringField(TEXT("type"), NodeTypeToString(Node));
 	NodeObject->SetStringField(TEXT("title"), Node->GetNodeTitle(ENodeTitleType::FullTitle).ToString());
-	NodeObject->SetStringField(TEXT("category"), GetNodeCategory(Node));
 
-	// Position
-	TSharedPtr<FJsonObject> PosObject = MakeShareable(new FJsonObject);
-	PosObject->SetNumberField(TEXT("x"), Node->NodePosX);
-	PosObject->SetNumberField(TEXT("y"), Node->NodePosY);
-	NodeObject->SetObjectField(TEXT("position"), PosObject);
-
-	// Pins
+	// Pins (filter out delegate pins)
 	TArray<TSharedPtr<FJsonValue>> PinsArray;
 	for (UEdGraphPin* Pin : Node->Pins)
 	{
-		if (Pin)
+		if (Pin && Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Delegate)
 		{
 			PinsArray.Add(MakeShareable(new FJsonValueObject(SerializePin(Pin))));
 		}
 	}
 	NodeObject->SetArrayField(TEXT("pins"), PinsArray);
-
-	// Connected nodes
-	TArray<TSharedPtr<FJsonValue>> ConnectionsArray;
-	TArray<UEdGraphNode*> ConnectedNodes = GetConnectedNodes(Node);
-	for (UEdGraphNode* ConnectedNode : ConnectedNodes)
-	{
-		ConnectionsArray.Add(MakeShareable(new FJsonValueString(ConnectedNode->GetName())));
-	}
-	NodeObject->SetArrayField(TEXT("connections"), ConnectionsArray);
 
 	return NodeObject;
 }
@@ -579,7 +563,6 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializePin(UEdGraphPin* Pin
 	TSharedPtr<FJsonObject> PinObject = MakeShareable(new FJsonObject);
 
 	PinObject->SetStringField(TEXT("name"), Pin->GetName());
-	PinObject->SetStringField(TEXT("display_name"), Pin->GetDisplayName().ToString());
 	PinObject->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Input ? TEXT("input") : TEXT("output"));
 	PinObject->SetStringField(TEXT("type"), PinTypeToString(Pin->PinType));
 
@@ -589,7 +572,7 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializePin(UEdGraphPin* Pin
 		PinObject->SetStringField(TEXT("default_value"), Pin->DefaultValue);
 	}
 
-	// Pin-to-pin connections
+	// Pin-to-pin connections (minimal format)
 	if (Pin->LinkedTo.Num() > 0)
 	{
 		TArray<TSharedPtr<FJsonValue>> ConnectionsArray;
@@ -598,14 +581,12 @@ TSharedPtr<FJsonObject> UBlueprintExporterLibrary::SerializePin(UEdGraphPin* Pin
 			if (LinkedPin && LinkedPin->GetOwningNode())
 			{
 				TSharedPtr<FJsonObject> ConnectionObj = MakeShareable(new FJsonObject);
-				ConnectionObj->SetStringField(TEXT("node_id"), LinkedPin->GetOwningNode()->GetName());
-				ConnectionObj->SetStringField(TEXT("node_title"), LinkedPin->GetOwningNode()->GetNodeTitle(ENodeTitleType::FullTitle).ToString());
-				ConnectionObj->SetStringField(TEXT("pin_name"), LinkedPin->GetName());
-				ConnectionObj->SetStringField(TEXT("pin_display_name"), LinkedPin->GetDisplayName().ToString());
+				ConnectionObj->SetStringField(TEXT("node"), LinkedPin->GetOwningNode()->GetName());
+				ConnectionObj->SetStringField(TEXT("pin"), LinkedPin->GetName());
 				ConnectionsArray.Add(MakeShareable(new FJsonValueObject(ConnectionObj)));
 			}
 		}
-		PinObject->SetArrayField(TEXT("connected_to"), ConnectionsArray);
+		PinObject->SetArrayField(TEXT("to"), ConnectionsArray);
 	}
 
 	return PinObject;

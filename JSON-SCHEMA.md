@@ -38,10 +38,7 @@
   id: string                // Unique ID (e.g., "K2Node_Event_123")
   type: string              // "Event", "FunctionCall", "Branch", "VariableGet", etc.
   title: string             // Display name
-  category: string
-  position: { x: number, y: number }
-  pins: Pin[]               // Input/output pins
-  connections: string[]     // Connected node IDs
+  pins: Pin[]               // Input/output pins (excludes delegate pins)
 }
 ```
 
@@ -49,11 +46,18 @@
 ```
 {
   name: string
-  display_name: string
   direction: "input" | "output"
   type: string              // "exec", "float", "int", "boolean", "Object", etc.
   default_value?: string
-  connected_to?: Connection[]
+  to?: Connection[]         // Connected pins
+}
+```
+
+### Connection
+```
+{
+  node: string              // Target node ID
+  pin: string               // Target pin name
 }
 ```
 
@@ -84,7 +88,7 @@ jq -c '[.variables[] | select(.type == "float")]' BP_Player.json
 jq -c '[.graphs[].nodes[] | select(.type == "Event")]' BP_Player.json
 
 # Find nodes connected FROM a node's exec outputs
-jq -c '.graphs[].nodes[] | select(.id == "K2Node_Event_123") | [.pins[] | select(.type == "exec" and .direction == "output") | .connected_to[]?.node_id]' BP_Player.json
+jq -c '.graphs[].nodes[] | select(.id == "K2Node_Event_123") | [.pins[] | select(.type == "exec" and .direction == "output") | .to[]?.node]' BP_Player.json
 
 # Count nodes by type
 jq -c '[.graphs[].nodes[].type] | group_by(.) | map({type: .[0], count: length})' BP_Player.json
