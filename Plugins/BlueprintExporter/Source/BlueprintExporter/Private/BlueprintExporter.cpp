@@ -22,6 +22,8 @@
 #include "ToolMenus.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
+#include "BlueprintEditorModule.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 
 // Python plugin headers (only if available)
 #if defined(WITH_PYTHON) && WITH_PYTHON
@@ -1089,19 +1091,52 @@ private:
 	{
 		FToolMenuOwnerScoped OwnerScoped(this);
 
-		UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Tools");
+		// Register "Export All Blueprints" globally in main menu
+		RegisterExportAllMenu("MainFrame.MainMenu.Tools");
+
+		// Register "Export Current Blueprint" in Blueprint Editor only
+		RegisterExportCurrentMenu("AssetEditor.BlueprintEditor.MainMenu.Tools");
+	}
+
+	void RegisterExportAllMenu(const FName& MenuPath)
+	{
+		UToolMenu* Menu = UToolMenus::Get()->ExtendMenu(MenuPath);
+		if (!Menu)
+		{
+			return;
+		}
+
 		FToolMenuSection& Section = Menu->AddSection("BlueprintExporter", FText::FromString("Blueprint Exporter"));
 
 		Section.AddMenuEntry(
-			"ExportBlueprints",
-			FText::FromString("Export Blueprints"),
+			"ExportAllBlueprints",
+			FText::FromString("Export All Blueprints"),
 			FText::FromString("Export all blueprints to JSON and Markdown"),
 			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateStatic(&FBlueprintExporterModule::ExecuteExport))
+			FUIAction(FExecuteAction::CreateStatic(&FBlueprintExporterModule::ExecuteExportAll))
 		);
 	}
 
-	static void ExecuteExport()
+	void RegisterExportCurrentMenu(const FName& MenuPath)
+	{
+		UToolMenu* Menu = UToolMenus::Get()->ExtendMenu(MenuPath);
+		if (!Menu)
+		{
+			return;
+		}
+
+		FToolMenuSection& Section = Menu->FindOrAddSection("BlueprintExporter");
+
+		Section.AddMenuEntry(
+			"ExportCurrentBlueprint",
+			FText::FromString("Export Current Blueprint"),
+			FText::FromString("Export the currently edited blueprint to JSON and Markdown"),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateStatic(&FBlueprintExporterModule::ExecuteExportCurrent))
+		);
+	}
+
+	static void ExecuteExportAll()
 	{
 		UE_LOG(LogBlueprintExporter, Log, TEXT("Starting blueprint export from menu..."));
 
@@ -1113,6 +1148,89 @@ private:
 		int32 ExportedCount = UBlueprintExporterLibrary::ExportAllBlueprints(OutputDir, Settings->bPrettyPrintJson, Settings->bGenerateMarkdown);
 
 		UE_LOG(LogBlueprintExporter, Log, TEXT("Export complete! Exported %d blueprints to: %s"), ExportedCount, *OutputDir);
+	}
+
+	static void ExecuteExportCurrent()
+	{
+		UE_LOG(LogBlueprintExporter, Log, TEXT("Starting current blueprint export from menu..."));
+
+		// Get the currently edited blueprint
+		UBlueprint* CurrentBlueprint = GetCurrentlyEditedBlueprint();
+		if (!CurrentBlueprint)
+		{
+			UE_LOG(LogBlueprintExporter, Warning, TEXT("No blueprint is currently being edited"));
+			return;
+		}
+
+		const UBlueprintExporterSettings* Settings = GetDefault<UBlueprintExporterSettings>();
+		FString ProjectDir = FPaths::ProjectDir();
+		FString OutputDir = FPaths::Combine(ProjectDir, Settings->OutputDirectory);
+
+		// Get blueprint path relative to /Game/
+		FString AssetPath = CurrentBlueprint->GetPathName();
+		FString BlueprintName = CurrentBlueprint->GetName();
+
+		// Remove package path prefix and .uasset extension if present
+		AssetPath.RemoveFromStart(TEXT("/Game/"));
+		int32 DotIndex;
+		if (AssetPath.FindLastChar('.', DotIndex))
+		{
+			AssetPath = AssetPath.Left(DotIndex);
+		}
+
+		// Create subdirectory structure
+		FString RelativeDir = FPaths::GetPath(AssetPath);
+		FString TargetDir = RelativeDir.IsEmpty() ? OutputDir : FPaths::Combine(OutputDir, RelativeDir);
+
+		// Ensure directory exists
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		if (!PlatformFile.DirectoryExists(*TargetDir))
+		{
+			PlatformFile.CreateDirectoryTree(*TargetDir);
+		}
+
+		// Export JSON
+		FString JsonPath = FPaths::Combine(TargetDir, BlueprintName + TEXT(".json"));
+		bool bJsonSuccess = UBlueprintExporterLibrary::ExportBlueprintToFile(CurrentBlueprint, JsonPath, Settings->bPrettyPrintJson);
+
+		// Export Markdown if enabled
+		bool bMarkdownSuccess = true;
+		if (Settings->bGenerateMarkdown)
+		{
+			FString MarkdownPath = FPaths::Combine(TargetDir, BlueprintName + TEXT(".md"));
+			bMarkdownSuccess = UBlueprintExporterLibrary::ExportBlueprintToMarkdown(CurrentBlueprint, MarkdownPath);
+		}
+
+		if (bJsonSuccess && bMarkdownSuccess)
+		{
+			UE_LOG(LogBlueprintExporter, Log, TEXT("Successfully exported %s to: %s"), *BlueprintName, *TargetDir);
+		}
+		else
+		{
+			UE_LOG(LogBlueprintExporter, Warning, TEXT("Failed to export %s"), *BlueprintName);
+		}
+	}
+
+	static UBlueprint* GetCurrentlyEditedBlueprint()
+	{
+		// Get the active Blueprint editor
+		if (FModuleManager::Get().IsModuleLoaded("Kismet"))
+		{
+			FBlueprintEditorModule& BlueprintEditorModule = FModuleManager::GetModuleChecked<FBlueprintEditorModule>("Kismet");
+
+			// Get all currently open asset editors
+			TArray<UObject*> EditedAssets = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->GetAllEditedAssets();
+
+			for (UObject* Asset : EditedAssets)
+			{
+				if (UBlueprint* Blueprint = Cast<UBlueprint>(Asset))
+				{
+					return Blueprint;
+				}
+			}
+		}
+
+		return nullptr;
 	}
 };
 
